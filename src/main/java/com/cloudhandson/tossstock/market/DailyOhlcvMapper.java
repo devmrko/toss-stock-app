@@ -14,6 +14,8 @@ public interface DailyOhlcvMapper {
 
     LocalDate latestDate();
 
+    LocalDate minDate();
+
     /** 최신 거래일 거래량 상위 N (universe 조인: name/market/sector, close→lastPrice). */
     List<VolumeRank> topByVolumeOnLatest(@Param("n") int n);
 

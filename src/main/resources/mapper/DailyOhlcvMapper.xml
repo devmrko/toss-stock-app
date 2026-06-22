@@ -24,6 +24,10 @@
         SELECT MAX(trade_date) FROM daily_ohlcv
     </select>
 
+    <select id="minDate" resultType="java.time.LocalDate">
+        SELECT MIN(trade_date) FROM daily_ohlcv
+    </select>
+
     <select id="topByVolumeOnLatest" resultType="com.cloudhandson.tossstock.market.VolumeRank">
         SELECT d.symbol       AS symbol,
                u.name         AS name,

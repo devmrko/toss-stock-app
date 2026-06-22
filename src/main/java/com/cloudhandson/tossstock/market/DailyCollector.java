@@ -46,8 +46,10 @@ public class DailyCollector {
     private long backoffMs;
     @Value("${toss.scan.max-retry:4}")
     private int maxRetry;
-    @Value("${toss.scan.backfill-days:25}")
-    private int backfillDays;   // 한 달치(~22거래일) 단일 호출, count<=200
+    @Value("${toss.scan.chunk-days:30}")
+    private int chunkDays;      // 후방 백필 1회당 가져올 일수(count<=200)
+    @Value("${toss.scan.target-days:365}")
+    private int targetDays;     // 목표 과거 깊이(이만큼 과거까지 채우면 종료)
 
     public DailyCollector(UniverseMapper universeMapper, DailyOhlcvMapper dailyMapper,
                           VolumeRankWriter writer, TossApiClient toss, ScanStatus status) {
@@ -71,13 +73,34 @@ public class DailyCollector {
     }
 
     /**
-     * 전 종목 최근 N일(기본 한 달) 일봉 백필 후 탑50 갱신.
-     * 단일 호출(count=backfillDays, 페이지네이션 없음) → 레이트리밋 부담 최소.
+     * 점진적 후방 백필: 현재 가진 가장 오래된 날짜보다 더 과거로 chunkDays 만큼 한 번 가져온다.
+     * 매일(스케줄) 호출하면 하루에 한 청크씩 과거로 확장 → 레이트리밋을 일 단위로 분산.
+     * 목표 깊이(targetDays) 도달 시 더 가져오지 않음.
      */
     @Async
-    public void backfillRecent() {
-        runScan("일봉 " + backfillDays + "일 백필",
-                u -> retry(() -> toss.getDailyCandles(u.getSymbol(), backfillDays), u.getSymbol()));
+    @Scheduled(cron = "${toss.scan.backfill-cron:0 10 16 * * MON-FRI}", zone = "Asia/Seoul")
+    public void backfillOlderChunk() {
+        LocalDate today = LocalDate.now();
+        LocalDate target = today.minusDays(targetDays);
+        LocalDate min = dailyMapper.minDate();
+        if (min != null && !min.isAfter(target)) {
+            log.info("후방 백필 목표({}일) 도달 — 더 가져올 과거 없음", targetDays);
+            return;
+        }
+        LocalDate boundary = (min == null) ? today.plusDays(1) : min;  // 이 날짜보다 과거를 가져옴
+        // UTC 'Z' 형식 사용: '+09:00' 의 '+' 가 쿼리 파라미터에서 공백으로 깨지는 문제 회피.
+        String before = boundary + "T00:00:00.000Z";
+        runScan("과거 일봉 청크(before " + boundary + ", " + chunkDays + "일)",
+                u -> retry(() -> olderCandles(u.getSymbol(), before, target), u.getSymbol()));
+    }
+
+    /** boundary 이전 chunkDays 개 일봉 중 target 이후만. */
+    private List<TossCandle> olderCandles(String symbol, String before, LocalDate target) {
+        CandlePage p = toss.getDailyCandlePage(symbol, chunkDays, before);
+        return p.candles().stream().filter(c -> {
+            LocalDate d = tradeDate(c);
+            return d != null && !d.isBefore(target);
+        }).toList();
     }
 
     private void runScan(String label, Function<Universe, List<TossCandle>> fetch) {

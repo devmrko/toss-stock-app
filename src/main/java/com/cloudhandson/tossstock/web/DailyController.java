@@ -39,10 +39,10 @@ public class DailyController {
                 "latestDate", latest == null ? "" : latest.toString());
     }
 
-    /** 최근 한 달(기본 25거래일) 일봉 백그라운드 백필. */
+    /** 과거로 한 청크 더 백필(현재 최오래된 날짜보다 과거 chunkDays 만큼). 매일 호출하면 점진 확장. */
     @PostMapping("/backfill")
     public ResponseEntity<Map<String, Object>> backfill() {
-        collector.backfillRecent();
+        collector.backfillOlderChunk();
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(status());
     }
 
