@@ -1,0 +1,11 @@
+# 'oracle' 프로파일: 실제 Autonomous DB 로 연결 (OracleWatchlistIT 전용).
+# 기본 test application.yml(H2)을 이 프로파일이 덮어쓴다.
+spring:
+  datasource:
+    url: jdbc:oracle:thin:@${ORACLE_SERVICE}?TNS_ADMIN=${ORACLE_TNS_ADMIN}
+    driver-class-name: oracle.jdbc.OracleDriver
+    username: ${ORACLE_USER}
+    password: ${ORACLE_PASSWORD}
+  sql:
+    init:
+      mode: never

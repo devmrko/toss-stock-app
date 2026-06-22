@@ -9,7 +9,8 @@
         ORDER BY id
     </select>
 
-    <insert id="insert" parameterType="Watchlist" useGeneratedKeys="true" keyProperty="id">
+    <!-- Oracle IDENTITY 키 반환: keyColumn 명시 필수(미지정 시 ROWID 반환 → ORA-17132) -->
+    <insert id="insert" parameterType="Watchlist" useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
         INSERT INTO watchlist (symbol, memo, created_at)
         VALUES (#{symbol}, #{memo}, CURRENT_TIMESTAMP)
     </insert>

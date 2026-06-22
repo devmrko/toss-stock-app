@@ -1,0 +1,11 @@
+# 테스트 전용 오버라이드: 단위/컨텍스트 테스트는 H2 인메모리로 hermetic 하게.
+# (실 Oracle 연결은 *IT 통합 테스트에서만 — OracleWatchlistIT)
+spring:
+  datasource:
+    url: jdbc:h2:mem:tossdb;DB_CLOSE_DELAY=-1;MODE=Oracle
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always   # 아래 schema.sql(H2) 자동 실행

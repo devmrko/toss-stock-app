@@ -4,11 +4,13 @@ import com.cloudhandson.tossstock.watchlist.WatchlistMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 컨텍스트 로드 + HikariCP/MyBatis 스모크 (외부 API 불필요). */
+/** 컨텍스트 로드 + HikariCP/MyBatis 스모크 (H2, 외부 의존 없음). */
 @SpringBootTest
+@ActiveProfiles("test")
 class TossStockAppApplicationTests {
 
     @Autowired

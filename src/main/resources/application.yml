@@ -5,18 +5,18 @@ spring:
   application:
     name: toss-stock-app
   datasource:
-    url: jdbc:h2:mem:tossdb;DB_CLOSE_DELAY=-1;MODE=MySQL
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
+    url: jdbc:oracle:thin:@${ORACLE_SERVICE}?TNS_ADMIN=${ORACLE_TNS_ADMIN}
+    driver-class-name: oracle.jdbc.OracleDriver
+    username: ${ORACLE_USER}
+    password: ${ORACLE_PASSWORD}
     hikari:
       pool-name: toss-hikari
       maximum-pool-size: 5
       minimum-idle: 1
-      connection-timeout: 5000
+      connection-timeout: 10000
   sql:
     init:
-      mode: always   # schema.sql 자동 실행
+      mode: never   # 실 DB에 자동 DDL 금지 (DDL은 db/watchlist.sql 로 수동/IT)
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml

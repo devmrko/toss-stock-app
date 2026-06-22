@@ -34,10 +34,23 @@
       <version>3.0.4</version>
     </dependency>
 
+    <!-- Oracle Autonomous DB: JDBC thin + SSO 월렛(cwallet.sso) 자동로그인 -->
+    <dependency>
+      <groupId>com.oracle.database.jdbc</groupId>
+      <artifactId>ojdbc11</artifactId>
+      <version>23.6.0.24.10</version>
+    </dependency>
+    <dependency>
+      <groupId>com.oracle.database.security</groupId>
+      <artifactId>oraclepki</artifactId>
+      <version>23.6.0.24.10</version>
+    </dependency>
+
+    <!-- H2: 단위/컨텍스트 테스트(hermetic)용 -->
     <dependency>
       <groupId>com.h2database</groupId>
       <artifactId>h2</artifactId>
-      <scope>runtime</scope>
+      <scope>test</scope>
     </dependency>
 
     <!-- .env 주입 (비밀 하드코딩 금지) -->

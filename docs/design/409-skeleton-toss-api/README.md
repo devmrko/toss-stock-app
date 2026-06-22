@@ -2,7 +2,7 @@
 
 > **상태**: Approved <!-- Draft | Approved | Superseded -->
 > **작성**: [AI] Architect · **최종수정**: 2026-06-22
-> **추적성** — Redmine: #409 · 관련 ADR: ADR-0001
+> **추적성** — Redmine: #409 · 관련 ADR: ADR-0001, ADR-0002(Oracle ADB)
 > · 구현 파일: `src/main/java/com/cloudhandson/tossstock/**` · 테스트: `src/test/java/com/cloudhandson/tossstock/toss/TossApiClientIT.java`
 
 ## 1. 목적 (Why)
@@ -16,12 +16,12 @@
   - `TossAuthClient`: OAuth2 `client_credentials` 토큰 발급 + 만료 전 캐시.
   - `TossApiClient`: 시세(`prices`)·종목(`stocks`)·계좌(`accounts`) 읽기 호출.
   - REST 컨트롤러 `/api/quote`, `/api/stock`, `/api/account` (얇은 패스스루).
-  - H2 인메모리 DB + MyBatis 매퍼 1개(헬스/스모크용 `watchlist` 테이블).
-  - 통합 테스트(실 API 호출, `.env` 키 있을 때만 실행).
+  - **Oracle Autonomous DB**(mTLS 월렛) + HikariCP + MyBatis 매퍼 1개(스모크용 `watchlist`).
+  - 통합 테스트(실 Toss API + 실 Oracle 호출, `.env` 자격증명 있을 때만 실행).
 - **제외 (out of scope)**:
   - 주문(매수/매도) 실행 — `POST /api/v1/orders` 는 **이번 범위 아님**(리스크/돈). 다음 이슈.
   - 실시간 웹소켓/스트리밍, 인증/회원, 프론트엔드 UI.
-  - 영속 RDB(운영 DB) — 이번엔 H2.
+  - 스키마 마이그레이션 도구(Flyway/Liquibase) — 다음 단계.
 
 ## 3. 인수조건 (Acceptance Criteria)
 - [ ] `mvn -q -DskipTests package` 빌드 성공.
@@ -64,7 +64,7 @@ HTTP 요청
 - **TossPrice**(응답 매핑): `symbol`, `lastPrice`, `currency`, `timestamp`.
 - **TossStock**: `symbol`, `name`, `market`, `isinCode`, `currency`, `status`.
 - **TossAccount**: `accountNo`, `accountSeq`, `accountType`.
-- **Watchlist**(H2): `id BIGINT PK`, `symbol VARCHAR(20)`, `memo VARCHAR(200)`, `created_at TIMESTAMP`.
+- **Watchlist**(Oracle): `id NUMBER IDENTITY PK`, `symbol VARCHAR2(20)`, `memo VARCHAR2(200)`, `created_at TIMESTAMP`. DDL: `db/watchlist.sql`(멱등). 테스트는 H2(MODE=Oracle).
 - **경계 검증**: `symbols` 파라미터 공백/길이 검증, 누락 시 400.
 
 ## 7. 함수 명세 (Function Specs)

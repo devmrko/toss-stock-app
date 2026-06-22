@@ -6,7 +6,8 @@
 ## 스택
 - Java 21, Spring Boot 3.3.5
 - HTTP: `RestClient` (ADR-0001)
-- DB: H2(인메모리) + MyBatis + HikariCP
+- DB: **Oracle Autonomous DB 26ai** (mTLS SSO 월렛, `ojdbc11`) + MyBatis + HikariCP (ADR-0002)
+  - 테스트는 H2(MODE=Oracle) hermetic / 실 Oracle 검증은 `OracleWatchlistIT`
 - 설정/비밀: `.env` (spring-dotenv) — **하드코딩·커밋 금지**
 
 ## 토스 Open API (검증 완료)
@@ -25,7 +26,15 @@
 TOSS_API_BASE_URL=https://openapi.tossinvest.com
 TOSS_CLIENT_KEY=...
 TOSS_SECRET_KEY=...
+# Oracle Autonomous DB (mTLS 월렛)
+ORACLE_TNS_ADMIN=/abs/path/to/Wallet_XXXX
+ORACLE_SERVICE=xxxx_tp
+ORACLE_USER=admin
+ORACLE_PASSWORD=...
 ```
+
+스키마 생성(최초 1회): `db/watchlist.sql` 을 SQLcl/Database Actions 에서 실행하거나
+`OracleWatchlistIT` 가 부팅 시 멱등 생성.
 
 ## 실행
 ```bash
