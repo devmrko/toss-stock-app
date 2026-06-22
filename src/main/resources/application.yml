@@ -23,6 +23,7 @@ mybatis:
   type-aliases-package: com.cloudhandson.tossstock.watchlist
   configuration:
     map-underscore-to-camel-case: true
+    jdbc-type-for-null: 'NULL'   # Oracle: null 파라미터 ORA-17004 방지
 
 # 토스증권 Open API — 값은 .env 에서 주입 (없으면 빈 문자열, 기동은 됨)
 toss:

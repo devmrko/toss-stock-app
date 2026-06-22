@@ -1,6 +1,7 @@
 package com.cloudhandson.tossstock.toss;
 
 import com.cloudhandson.tossstock.toss.dto.TossAccount;
+import com.cloudhandson.tossstock.toss.dto.TossCandle;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
 import com.cloudhandson.tossstock.toss.dto.TossStock;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -66,8 +67,34 @@ public class TossApiClient {
         return body == null ? List.of() : body.result();
     }
 
+    /** 일봉 N개 — GET /api/v1/candles?symbol=005930&interval=1d&count=2 (0=오늘, 1=전일). */
+    public List<TossCandle> getDailyCandles(String symbol, int count) {
+        CandlesResponse body = restClient.get()
+                .uri(uri -> uri.path("/api/v1/candles")
+                        .queryParam("symbol", symbol)
+                        .queryParam("interval", "1d")
+                        .queryParam("count", count)
+                        .build())
+                .header("Authorization", "Bearer " + auth.getAccessToken())
+                .retrieve()
+                .onStatus(s -> s.value() >= 400, (req, res) -> {
+                    throw new TossApiException("캔들 조회 실패: HTTP " + res.getStatusCode().value(),
+                            res.getStatusCode().value());
+                })
+                .body(CandlesResponse.class);
+        return body == null || body.result() == null ? List.of() : body.result().candles();
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     record PricesResponse(List<TossPrice> result) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record CandlesResponse(CandlesResult result) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record CandlesResult(List<TossCandle> candles, String nextBefore) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

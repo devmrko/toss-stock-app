@@ -9,6 +9,17 @@
         ORDER BY id
     </select>
 
+    <select id="findBySymbol" parameterType="string" resultType="Watchlist">
+        SELECT id, symbol, memo, created_at
+        FROM watchlist
+        WHERE symbol = #{symbol}
+        FETCH FIRST 1 ROWS ONLY
+    </select>
+
+    <delete id="deleteById" parameterType="long">
+        DELETE FROM watchlist WHERE id = #{id}
+    </delete>
+
     <!-- Oracle IDENTITY 키 반환: keyColumn 명시 필수(미지정 시 ROWID 반환 → ORA-17132) -->
     <insert id="insert" parameterType="Watchlist" useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
         INSERT INTO watchlist (symbol, memo, created_at)

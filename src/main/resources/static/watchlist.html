@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>워치리스트 · 거래량 모니터링</title>
+  <style>
+    :root { --up:#e03131; --down:#1971c2; --line:#e9ecef; --muted:#868e96; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Apple SD Gothic Neo", Pretendard, sans-serif;
+           margin: 0; background: #f8f9fa; color: #212529; }
+    header { padding: 18px 24px; background: #fff; border-bottom: 1px solid var(--line);
+             display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    h1 { font-size: 20px; margin: 0; }
+    .sub { color: var(--muted); font-size: 13px; }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 20px 24px; }
+    form { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    input { padding: 9px 12px; border: 1px solid #ced4da; border-radius: 8px; font-size: 14px; }
+    input[name=symbol] { width: 130px; }
+    input[name=memo] { flex: 1; min-width: 140px; }
+    button { padding: 9px 16px; border: 0; border-radius: 8px; background: #228be6; color: #fff;
+             font-size: 14px; cursor: pointer; }
+    button.del { background: transparent; color: var(--muted); padding: 4px 8px; }
+    button.del:hover { color: var(--up); }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    th, td { padding: 11px 12px; text-align: right; border-bottom: 1px solid var(--line); font-size: 14px; }
+    th { background: #f1f3f5; color: #495057; font-weight: 600; font-size: 12px; text-align: right; }
+    th:nth-child(1), td:nth-child(1) { text-align: center; width: 44px; color: var(--muted); }
+    th:nth-child(2), td:nth-child(2) { text-align: left; }
+    td.num { font-variant-numeric: tabular-nums; }
+    .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+    .name { font-weight: 600; } .code { color: var(--muted); font-size: 12px; margin-left: 6px; }
+    .stale td { opacity: .5; }
+    .empty { text-align: center; color: var(--muted); padding: 40px; }
+    .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#37b24d; margin-right:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📈 워치리스트</h1>
+    <span class="sub"><span class="dot"></span>거래량 순 · 5초 자동 갱신 · 상위 50</span>
+    <span class="sub" id="updated" style="margin-left:auto"></span>
+  </header>
+  <div class="wrap">
+    <form id="addForm">
+      <input name="symbol" placeholder="종목코드 (예: 005930)" maxlength="20" required/>
+      <input name="memo" placeholder="메모 (선택)"/>
+      <button type="submit">+ 추가</button>
+    </form>
+    <table>
+      <thead>
+        <tr><th>#</th><th>종목</th><th>현재가</th><th>등락률</th><th>거래량</th><th></th></tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td class="empty" colspan="6">불러오는 중…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    const fmt = new Intl.NumberFormat('ko-KR');
+    const $rows = document.getElementById('rows');
+    const $updated = document.getElementById('updated');
+
+    function cls(rate) { return rate == null ? 'flat' : rate > 0 ? 'up' : rate < 0 ? 'down' : 'flat'; }
+    function sign(n) { return n > 0 ? '+' : ''; }
+
+    async function load() {
+      try {
+        const res = await fetch('/api/watchlist/quotes');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        render(await res.json());
+        $updated.textContent = '갱신 ' + new Date().toLocaleTimeString('ko-KR');
+      } catch (e) {
+        $updated.textContent = '갱신 실패 — 재시도 중';
+      }
+    }
+
+    function render(quotes) {
+      if (!quotes.length) {
+        $rows.innerHTML = '<tr><td class="empty" colspan="6">워치리스트가 비어 있어요. 위에서 종목코드를 추가하세요.</td></tr>';
+        return;
+      }
+      $rows.innerHTML = quotes.map(q => {
+        const rate = q.changeRate;
+        const price = q.lastPrice != null ? fmt.format(q.lastPrice) : '-';
+        const rateTxt = rate != null ? sign(rate) + rate.toFixed(2) + '%' : '-';
+        const amt = q.changeAmount != null ? ' (' + sign(q.changeAmount) + fmt.format(q.changeAmount) + ')' : '';
+        const vol = q.volume != null ? fmt.format(q.volume) : '-';
+        return `<tr class="${q.stale ? 'stale' : ''}">
+          <td>${q.rank}</td>
+          <td><span class="name">${q.name ?? '-'}</span><span class="code">${q.symbol}</span></td>
+          <td class="num">${price}</td>
+          <td class="num ${cls(rate)}">${rateTxt}<span style="font-size:11px">${amt}</span></td>
+          <td class="num">${vol}</td>
+          <td><button class="del" data-id="${q.id}" title="삭제">✕</button></td>
+        </tr>`;
+      }).join('');
+    }
+
+    document.getElementById('addForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const body = { symbol: f.symbol.value.trim(), memo: f.memo.value.trim() || null };
+      const res = await fetch('/api/watchlist', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      if (res.status === 409) { alert('이미 워치리스트에 있는 종목입니다.'); return; }
+      if (!res.ok) { alert('추가 실패 (HTTP ' + res.status + ')'); return; }
+      f.reset(); f.symbol.focus();
+      load();
+    });
+
+    $rows.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button.del');
+      if (!btn) return;
+      if (!confirm('이 종목을 워치리스트에서 삭제할까요?')) return;
+      await fetch('/api/watchlist/' + btn.dataset.id, { method: 'DELETE' });
+      load();
+    });
+
+    load();
+    setInterval(load, 5000);
+  </script>
+</body>
+</html>

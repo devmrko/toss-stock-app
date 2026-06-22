@@ -42,11 +42,17 @@ set -a; . ./.env; set +a            # .env → 환경변수
 mvn spring-boot:run                  # http://localhost:8080
 ```
 
+### 웹페이지
+- **`GET /watchlist.html`** — 워치리스트 거래량 모니터링 (5초 폴링, 거래량 내림차순, 상위 50). 설계: `docs/design/414-watchlist-page/`
+  - ⚠️ 포트 8080이 다른 앱에 점유 중이면 `SERVER_PORT=8081 mvn spring-boot:run` 로 변경.
+
 ### 앱 엔드포인트
 - `GET /api/quote?symbols=005930` — 시세
 - `GET /api/stock?symbols=005930` — 종목정보
 - `GET /api/account` — 계좌목록
-- `GET /api/watchlist` — MyBatis/HikariCP 스모크
+- `GET /api/watchlist/quotes` — 워치리스트 거래량 정렬 모니터링(이름·등락률·거래량)
+- `POST /api/watchlist {"symbol","memo"}` · `DELETE /api/watchlist/{id}` — 종목 추가/삭제
+- `GET /api/watchlist` — 원본 행(스모크)
 
 ## 테스트
 ```bash

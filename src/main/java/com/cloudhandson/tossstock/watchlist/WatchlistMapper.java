@@ -8,5 +8,9 @@ import java.util.List;
 public interface WatchlistMapper {
     List<Watchlist> findAll();
 
+    Watchlist findBySymbol(String symbol);
+
     int insert(Watchlist watchlist);
+
+    int deleteById(Long id);
 }
