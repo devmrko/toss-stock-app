@@ -1,10 +1,12 @@
--- Oracle DDL — 시장 전체 거래량 탑50 (#416). 멱등(ORA-00955 무시).
+-- Oracle DDL — 시장 전체 거래량 탑50 (#416, #418). 멱등(ORA-00955 무시).
 BEGIN
   EXECUTE IMMEDIATE q'[
     CREATE TABLE universe (
-      symbol VARCHAR2(6)   PRIMARY KEY,
-      name   VARCHAR2(100) NOT NULL,
-      market VARCHAR2(10)  NOT NULL
+      symbol  VARCHAR2(6)   PRIMARY KEY,
+      name    VARCHAR2(100) NOT NULL,
+      market  VARCHAR2(10)  NOT NULL,
+      ksic    VARCHAR2(300),
+      product VARCHAR2(1000)
     )
   ]';
 EXCEPTION WHEN OTHERS THEN IF SQLCODE != -955 THEN RAISE; END IF;
@@ -18,6 +20,7 @@ BEGIN
       symbol       VARCHAR2(6)  NOT NULL,
       name         VARCHAR2(100),
       market       VARCHAR2(10),
+      sector       VARCHAR2(20),
       volume       NUMBER,
       last_price   NUMBER,
       prev_close   NUMBER,

@@ -9,13 +9,13 @@
 
     <insert id="insert" parameterType="com.cloudhandson.tossstock.market.VolumeRank">
         INSERT INTO volume_rank
-            (as_of, rnk, symbol, name, market, volume, last_price, prev_close, change_rate)
+            (as_of, rnk, symbol, name, market, sector, volume, last_price, prev_close, change_rate)
         VALUES
-            (#{asOf}, #{rnk}, #{symbol}, #{name}, #{market}, #{volume}, #{lastPrice}, #{prevClose}, #{changeRate})
+            (#{asOf}, #{rnk}, #{symbol}, #{name}, #{market}, #{sector}, #{volume}, #{lastPrice}, #{prevClose}, #{changeRate})
     </insert>
 
     <select id="findLatest" resultType="com.cloudhandson.tossstock.market.VolumeRank">
-        SELECT as_of, rnk, symbol, name, market, volume, last_price, prev_close, change_rate
+        SELECT as_of, rnk, symbol, name, market, sector, volume, last_price, prev_close, change_rate
         FROM volume_rank
         ORDER BY rnk
     </select>

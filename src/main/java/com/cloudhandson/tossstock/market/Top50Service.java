@@ -35,6 +35,7 @@ public class Top50Service {
     private final VolumeRankWriter writer;
     private final TossApiClient toss;
     private final ScanStatus status;
+    private final SectorClassifier sectorClassifier;
 
     @Value("${toss.scan.throttle-ms:90}")
     private long throttleMs;
@@ -44,11 +45,12 @@ public class Top50Service {
     private int maxRetry;
 
     public Top50Service(UniverseMapper universeMapper, VolumeRankWriter writer,
-                        TossApiClient toss, ScanStatus status) {
+                        TossApiClient toss, ScanStatus status, SectorClassifier sectorClassifier) {
         this.universeMapper = universeMapper;
         this.writer = writer;
         this.toss = toss;
         this.status = status;
+        this.sectorClassifier = sectorClassifier;
     }
 
     /** 매 영업일 15:40 KST 자동 갱신. */
@@ -135,6 +137,7 @@ public class Top50Service {
             r.setSymbol(s.u().getSymbol());
             r.setName(s.u().getName());
             r.setMarket(s.u().getMarket());
+            r.setSector(sectorClassifier.classify(s.u().getName(), s.u().getKsic(), s.u().getProduct()));
             r.setVolume(s.volume());
             r.setLastPrice(last);
             r.setPrevClose(s.prevClose());

@@ -8,12 +8,12 @@
     </select>
 
     <select id="findAll" resultType="com.cloudhandson.tossstock.market.Universe">
-        SELECT symbol, name, market FROM universe ORDER BY symbol
+        SELECT symbol, name, market, ksic, product FROM universe ORDER BY symbol
     </select>
 
     <insert id="insert" parameterType="com.cloudhandson.tossstock.market.Universe">
-        INSERT INTO universe (symbol, name, market)
-        VALUES (#{symbol}, #{name}, #{market})
+        INSERT INTO universe (symbol, name, market, ksic, product)
+        VALUES (#{symbol}, #{name}, #{market}, #{ksic}, #{product})
     </insert>
 
 </mapper>

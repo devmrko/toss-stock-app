@@ -37,7 +37,8 @@ public class UniverseSeeder implements ApplicationRunner {
             List<Map<String, String>> seed = objectMapper.readValue(in, List.class);
             int n = 0;
             for (Map<String, String> m : seed) {
-                mapper.insert(new Universe(m.get("symbol"), m.get("name"), m.get("market")));
+                mapper.insert(new Universe(m.get("symbol"), m.get("name"), m.get("market"),
+                        m.get("ksic"), m.get("product")));
                 n++;
             }
             log.info("universe 시드 완료: {} 종목", n);

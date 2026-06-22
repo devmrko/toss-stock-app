@@ -23,7 +23,7 @@ class Top50ServiceTest {
     @InjectMocks Top50Service service;
 
     private static SymVol sv(String code, Long vol) {
-        return new SymVol(new Universe(code, "name-" + code, "KOSPI"), vol, null);
+        return new SymVol(new Universe(code, "name-" + code, "KOSPI", null, null), vol, null);
     }
 
     @Test

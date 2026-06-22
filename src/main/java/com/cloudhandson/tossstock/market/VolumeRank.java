@@ -10,6 +10,7 @@ public class VolumeRank {
     private String symbol;
     private String name;
     private String market;
+    private String sector;
     private Long volume;
     private BigDecimal lastPrice;
     private BigDecimal prevClose;
@@ -25,6 +26,8 @@ public class VolumeRank {
     public void setName(String name) { this.name = name; }
     public String getMarket() { return market; }
     public void setMarket(String market) { this.market = market; }
+    public String getSector() { return sector; }
+    public void setSector(String sector) { this.sector = sector; }
     public Long getVolume() { return volume; }
     public void setVolume(Long volume) { this.volume = volume; }
     public BigDecimal getLastPrice() { return lastPrice; }

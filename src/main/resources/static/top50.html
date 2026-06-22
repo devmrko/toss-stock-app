@@ -26,6 +26,8 @@
     .up{color:var(--up);} .down{color:var(--down);} .flat{color:var(--muted);}
     .name{font-weight:600;} .code{color:var(--muted);font-size:12px;margin-left:6px;}
     .mkt{display:inline-block;font-size:11px;padding:1px 6px;border-radius:4px;background:#f1f3f5;color:#495057;margin-left:6px;}
+    .sector{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:#e7f5ff;color:#1971c2;margin-left:6px;font-weight:600;}
+    .sector.etc{background:#f1f3f5;color:#868e96;}
     .empty{text-align:center;color:var(--muted);padding:40px;}
   </style>
 </head>
@@ -83,7 +85,7 @@
         const vol = q.volume != null ? fmt.format(q.volume) : '-';
         return `<tr>
           <td>${q.rnk}</td>
-          <td><span class="name">${q.name ?? '-'}</span><span class="code">${q.symbol}</span><span class="mkt">${q.market ?? ''}</span></td>
+          <td><span class="name">${q.name ?? '-'}</span><span class="code">${q.symbol}</span>${q.sector ? `<span class="sector ${q.sector==='기타'?'etc':''}">${q.sector}</span>` : ''}<span class="mkt">${q.market ?? ''}</span></td>
           <td class="num">${price}</td>
           <td class="num ${cls(rate)}">${rateTxt}</td>
           <td class="num">${vol}</td>
