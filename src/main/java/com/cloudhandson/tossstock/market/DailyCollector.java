@@ -46,6 +46,8 @@ public class DailyCollector {
     private long backoffMs;
     @Value("${toss.scan.max-retry:4}")
     private int maxRetry;
+    @Value("${toss.scan.backfill-days:25}")
+    private int backfillDays;   // 한 달치(~22거래일) 단일 호출, count<=200
 
     public DailyCollector(UniverseMapper universeMapper, DailyOhlcvMapper dailyMapper,
                           VolumeRankWriter writer, TossApiClient toss, ScanStatus status) {
@@ -68,10 +70,14 @@ public class DailyCollector {
         runScan("일봉 갱신", u -> retry(() -> toss.getDailyCandles(u.getSymbol(), 2), u.getSymbol()));
     }
 
-    /** 전 종목 1년 일봉 백필 후 탑50 갱신. */
+    /**
+     * 전 종목 최근 N일(기본 한 달) 일봉 백필 후 탑50 갱신.
+     * 단일 호출(count=backfillDays, 페이지네이션 없음) → 레이트리밋 부담 최소.
+     */
     @Async
-    public void backfillYear() {
-        runScan("일봉 1년 백필", u -> fetchYear(u.getSymbol()));
+    public void backfillRecent() {
+        runScan("일봉 " + backfillDays + "일 백필",
+                u -> retry(() -> toss.getDailyCandles(u.getSymbol(), backfillDays), u.getSymbol()));
     }
 
     private void runScan(String label, Function<Universe, List<TossCandle>> fetch) {

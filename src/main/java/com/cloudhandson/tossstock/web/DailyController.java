@@ -39,10 +39,10 @@ public class DailyController {
                 "latestDate", latest == null ? "" : latest.toString());
     }
 
-    /** 1년치 일봉 백그라운드 백필(~26분). */
+    /** 최근 한 달(기본 25거래일) 일봉 백그라운드 백필. */
     @PostMapping("/backfill")
     public ResponseEntity<Map<String, Object>> backfill() {
-        collector.backfillYear();
+        collector.backfillRecent();
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(status());
     }
 
