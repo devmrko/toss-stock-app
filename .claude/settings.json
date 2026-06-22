@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Read",
+      "Edit",
+      "Write",
+      "WebFetch",
+      "WebSearch",
+      "mcp__searxng__web_search",
+      "mcp__oracle-26ai-vector__search_similar"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf ~/*)",
+      "Bash(sudo rm -rf *)",
+      "Edit(//Users/joungmin/.claude/settings.json)",
+      "Write(//Users/joungmin/.claude/settings.json)",
+      "Edit(//Users/joungmin/.claude/settings.local.json)",
+      "Write(//Users/joungmin/.claude/settings.local.json)",
+      "Edit(//Users/joungmin/.claude/agents/**)",
+      "Write(//Users/joungmin/.claude/agents/**)",
+      "Edit(//Users/joungmin/.claude/commands/**)",
+      "Write(//Users/joungmin/.claude/commands/**)",
+      "Edit(//Users/joungmin/.claude/CLAUDE.md)",
+      "Write(//Users/joungmin/.claude/CLAUDE.md)",
+      "Edit(//Users/joungmin/.gitconfig)",
+      "Write(//Users/joungmin/.gitconfig)",
+      "Edit(.git/**)",
+      "Write(.git/**)"
+    ]
+  }
+}

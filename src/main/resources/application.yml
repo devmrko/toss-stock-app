@@ -1,0 +1,35 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: toss-stock-app
+  datasource:
+    url: jdbc:h2:mem:tossdb;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+    hikari:
+      pool-name: toss-hikari
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 5000
+  sql:
+    init:
+      mode: always   # schema.sql 자동 실행
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.cloudhandson.tossstock.watchlist
+  configuration:
+    map-underscore-to-camel-case: true
+
+# 토스증권 Open API — 값은 .env 에서 주입 (없으면 빈 문자열, 기동은 됨)
+toss:
+  base-url: ${TOSS_API_BASE_URL:https://openapi.tossinvest.com}
+  client-key: ${TOSS_CLIENT_KEY:}
+  secret-key: ${TOSS_SECRET_KEY:}
+
+logging:
+  level:
+    com.cloudhandson.tossstock: INFO
