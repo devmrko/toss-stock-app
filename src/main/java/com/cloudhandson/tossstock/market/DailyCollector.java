@@ -71,7 +71,7 @@ public class DailyCollector {
     /** 전 종목 1년 일봉 백필 후 탑50 갱신. */
     @Async
     public void backfillYear() {
-        runScan("일봉 1년 백필", u -> retry(() -> fetchYear(u.getSymbol()), u.getSymbol()));
+        runScan("일봉 1년 백필", u -> fetchYear(u.getSymbol()));
     }
 
     private void runScan(String label, Function<Universe, List<TossCandle>> fetch) {
@@ -105,15 +105,19 @@ public class DailyCollector {
         }
     }
 
-    /** 1년치 일봉(페이지네이션). before=직전 nextBefore, count<=200. */
+    /**
+     * 1년치 일봉(페이지네이션). before=직전 nextBefore, count<=200.
+     * 페이지 단위로 재시도하고, 한 페이지가 실패해도 **그때까지 모은 페이지는 보존**한다
+     * (page2 실패가 page1 데이터를 버리지 않도록).
+     */
     List<TossCandle> fetchYear(String symbol) {
         LocalDate cutoff = LocalDate.now().minusYears(1);
         List<TossCandle> acc = new ArrayList<>();
         String before = null;
         for (int page = 0; page < MAX_PAGES; page++) {
-            CandlePage p = toss.getDailyCandlePage(symbol, PAGE, before);
-            if (p.candles().isEmpty()) {
-                break;
+            CandlePage p = retryPage(symbol, before);
+            if (p == null || p.candles().isEmpty()) {
+                break;   // 실패/끝 → 지금까지 모은 것 유지
             }
             acc.addAll(p.candles());
             LocalDate oldest = tradeDate(p.candles().get(p.candles().size() - 1));
@@ -126,6 +130,25 @@ public class DailyCollector {
             LocalDate d = tradeDate(c);
             return d != null && !d.isBefore(cutoff);
         }).toList();
+    }
+
+    /** 단일 페이지 호출 + 429 백오프 재시도. 포기 시 null(부분결과 보존). */
+    private CandlePage retryPage(String symbol, String before) {
+        int attempt = 0;
+        while (true) {
+            try {
+                return toss.getDailyCandlePage(symbol, PAGE, before);
+            } catch (TossApiException e) {
+                if (e.getStatus() == 429 && attempt < maxRetry) {
+                    attempt++;
+                    sleep(backoffMs * attempt);
+                    continue;
+                }
+                return null;
+            } catch (RuntimeException e) {
+                return null;
+            }
+        }
     }
 
     /** daily_ohlcv 최신일 거래량 탑50 → 섹터/등락률 부여 → VOLUME_RANK 교체저장. */
