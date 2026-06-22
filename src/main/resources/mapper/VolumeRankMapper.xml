@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cloudhandson.tossstock.market.VolumeRankMapper">
+
+    <delete id="deleteAll">
+        DELETE FROM volume_rank
+    </delete>
+
+    <insert id="insert" parameterType="com.cloudhandson.tossstock.market.VolumeRank">
+        INSERT INTO volume_rank
+            (as_of, rnk, symbol, name, market, volume, last_price, prev_close, change_rate)
+        VALUES
+            (#{asOf}, #{rnk}, #{symbol}, #{name}, #{market}, #{volume}, #{lastPrice}, #{prevClose}, #{changeRate})
+    </insert>
+
+    <select id="findLatest" resultType="com.cloudhandson.tossstock.market.VolumeRank">
+        SELECT as_of, rnk, symbol, name, market, volume, last_price, prev_close, change_rate
+        FROM volume_rank
+        ORDER BY rnk
+    </select>
+
+    <select id="latestAsOf" resultType="java.time.LocalDateTime">
+        SELECT MAX(as_of) FROM volume_rank
+    </select>
+
+</mapper>

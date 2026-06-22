@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>오늘 거래량 탑50 · 시장 전체</title>
+  <style>
+    :root { --up:#e03131; --down:#1971c2; --line:#e9ecef; --muted:#868e96; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Apple SD Gothic Neo", Pretendard, sans-serif; margin:0; background:#f8f9fa; color:#212529; }
+    header { padding:18px 24px; background:#fff; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+    h1 { font-size:20px; margin:0; }
+    .sub { color:var(--muted); font-size:13px; }
+    .wrap { max-width:960px; margin:0 auto; padding:20px 24px; }
+    .bar-wrap { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+    button { padding:9px 16px; border:0; border-radius:8px; background:#228be6; color:#fff; font-size:14px; cursor:pointer; }
+    button:disabled { background:#adb5bd; cursor:default; }
+    .prog { flex:1; height:8px; background:#e9ecef; border-radius:4px; overflow:hidden; }
+    .prog > i { display:block; height:100%; background:#37b24d; width:0; transition:width .4s; }
+    table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+    th,td { padding:10px 12px; text-align:right; border-bottom:1px solid var(--line); font-size:14px; }
+    th { background:#f1f3f5; color:#495057; font-weight:600; font-size:12px; }
+    th:nth-child(1),td:nth-child(1){ text-align:center; width:44px; color:var(--muted); }
+    th:nth-child(2),td:nth-child(2){ text-align:left; }
+    td.num { font-variant-numeric:tabular-nums; }
+    .up{color:var(--up);} .down{color:var(--down);} .flat{color:var(--muted);}
+    .name{font-weight:600;} .code{color:var(--muted);font-size:12px;margin-left:6px;}
+    .mkt{display:inline-block;font-size:11px;padding:1px 6px;border-radius:4px;background:#f1f3f5;color:#495057;margin-left:6px;}
+    .empty{text-align:center;color:var(--muted);padding:40px;}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔥 오늘 거래량 탑50</h1>
+    <span class="sub">KRX 전체(KOSPI+KOSDAQ) 스캔 · 일배치</span>
+    <span class="sub" id="asof" style="margin-left:auto"></span>
+  </header>
+  <div class="wrap">
+    <div class="bar-wrap">
+      <button id="refreshBtn">↻ 지금 갱신</button>
+      <div class="prog"><i id="progBar"></i></div>
+      <span class="sub" id="progTxt"></span>
+    </div>
+    <table>
+      <thead>
+        <tr><th>#</th><th>종목</th><th>현재가</th><th>등락률</th><th>거래량</th></tr>
+      </thead>
+      <tbody id="rows"><tr><td class="empty" colspan="5">불러오는 중…</td></tr></tbody>
+    </table>
+  </div>
+
+  <script>
+    const fmt = new Intl.NumberFormat('ko-KR');
+    const $rows = document.getElementById('rows'), $btn = document.getElementById('refreshBtn');
+    const $bar = document.getElementById('progBar'), $ptxt = document.getElementById('progTxt'), $asof = document.getElementById('asof');
+    const cls = r => r==null?'flat':r>0?'up':r<0?'down':'flat';
+    const sign = n => n>0?'+':'';
+
+    async function load() {
+      try {
+        const d = await (await fetch('/api/top50')).json();
+        const running = d.state === 'RUNNING';
+        $btn.disabled = running;
+        $btn.textContent = running ? '집계 중…' : '↻ 지금 갱신';
+        if (d.total > 0) {
+          $bar.style.width = Math.round(d.scanned / d.total * 100) + '%';
+          $ptxt.textContent = running ? `스캔 ${fmt.format(d.scanned)}/${fmt.format(d.total)}` : '';
+        }
+        $asof.textContent = d.asOf ? '기준 ' + new Date(d.asOf).toLocaleString('ko-KR') : (running ? '' : '아직 집계 전');
+        render(d.rows || []);
+      } catch (e) { $ptxt.textContent = '조회 실패'; }
+    }
+
+    function render(rows) {
+      if (!rows.length) {
+        $rows.innerHTML = '<tr><td class="empty" colspan="5">아직 집계 결과가 없어요. “지금 갱신”을 누르면 전체 스캔이 시작됩니다(약 5분).</td></tr>';
+        return;
+      }
+      $rows.innerHTML = rows.map(q => {
+        const rate = q.changeRate;
+        const price = q.lastPrice != null ? fmt.format(q.lastPrice) : '-';
+        const rateTxt = rate != null ? sign(rate) + rate.toFixed(2) + '%' : '-';
+        const vol = q.volume != null ? fmt.format(q.volume) : '-';
+        return `<tr>
+          <td>${q.rnk}</td>
+          <td><span class="name">${q.name ?? '-'}</span><span class="code">${q.symbol}</span><span class="mkt">${q.market ?? ''}</span></td>
+          <td class="num">${price}</td>
+          <td class="num ${cls(rate)}">${rateTxt}</td>
+          <td class="num">${vol}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    $btn.addEventListener('click', async () => {
+      $btn.disabled = true;
+      await fetch('/api/top50/refresh', { method: 'POST' });
+      load();
+    });
+
+    load();
+    setInterval(load, 3000);
+  </script>
+</body>
+</html>

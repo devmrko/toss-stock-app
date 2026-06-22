@@ -44,6 +44,9 @@ mvn spring-boot:run                  # http://localhost:8080
 
 ### 웹페이지
 - **`GET /watchlist.html`** — 워치리스트 거래량 모니터링 (5초 폴링, 거래량 내림차순, 상위 50). 설계: `docs/design/414-watchlist-page/`
+- **`GET /top50.html`** — 시장 전체(KRX KOSPI+KOSDAQ ≈2,605) **오늘 거래량 탑50** (일배치 스캔). 설계: `docs/design/416-market-top50/`
+  - 갱신: `POST /api/top50/refresh`(백그라운드 ~5분) · 조회: `GET /api/top50` · 자동: 영업일 15:40 KST
+  - 유니버스 시드: `resources/universe-krx.json`(KRX 상장목록) → Oracle `UNIVERSE`. DDL `db/top50.sql`.
   - ⚠️ 포트 8080이 다른 앱에 점유 중이면 `SERVER_PORT=8081 mvn spring-boot:run` 로 변경.
 
 ### 앱 엔드포인트

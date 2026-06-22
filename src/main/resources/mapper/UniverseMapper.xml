@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cloudhandson.tossstock.market.UniverseMapper">
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM universe
+    </select>
+
+    <select id="findAll" resultType="com.cloudhandson.tossstock.market.Universe">
+        SELECT symbol, name, market FROM universe ORDER BY symbol
+    </select>
+
+    <insert id="insert" parameterType="com.cloudhandson.tossstock.market.Universe">
+        INSERT INTO universe (symbol, name, market)
+        VALUES (#{symbol}, #{name}, #{market})
+    </insert>
+
+</mapper>
