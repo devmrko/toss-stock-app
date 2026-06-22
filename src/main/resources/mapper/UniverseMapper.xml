@@ -7,9 +7,17 @@
         SELECT COUNT(*) FROM universe
     </select>
 
-    <select id="findAll" resultType="com.cloudhandson.tossstock.market.Universe">
-        SELECT symbol, name, market, ksic, product FROM universe ORDER BY symbol
+    <select id="countWithoutSector" resultType="long">
+        SELECT COUNT(*) FROM universe WHERE sector IS NULL
     </select>
+
+    <select id="findAll" resultType="com.cloudhandson.tossstock.market.Universe">
+        SELECT symbol, name, market, ksic, product, sector FROM universe ORDER BY symbol
+    </select>
+
+    <update id="updateSector">
+        UPDATE universe SET sector = #{sector} WHERE symbol = #{symbol}
+    </update>
 
     <insert id="insert" parameterType="com.cloudhandson.tossstock.market.Universe">
         INSERT INTO universe (symbol, name, market, ksic, product)

@@ -7,6 +7,7 @@ public class Universe {
     private String market;
     private String ksic;     // KRX 업종(KSIC)
     private String product;  // 주요제품
+    private String sector;   // 분류된 섹터/테마(사전계산)
 
     public Universe() {
     }
@@ -29,4 +30,6 @@ public class Universe {
     public void setKsic(String ksic) { this.ksic = ksic; }
     public String getProduct() { return product; }
     public void setProduct(String product) { this.product = product; }
+    public String getSector() { return sector; }
+    public void setSector(String sector) { this.sector = sector; }
 }

@@ -1,7 +1,7 @@
 package com.cloudhandson.tossstock.web;
 
+import com.cloudhandson.tossstock.market.DailyCollector;
 import com.cloudhandson.tossstock.market.ScanStatus;
-import com.cloudhandson.tossstock.market.Top50Service;
 import com.cloudhandson.tossstock.market.VolumeRank;
 import com.cloudhandson.tossstock.market.VolumeRankMapper;
 import org.springframework.http.HttpStatus;
@@ -14,17 +14,17 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** 시장 전체 거래량 탑50 조회/갱신. */
+/** 거래량 탑50 조회/갱신 (출처: daily_ohlcv materialize → VOLUME_RANK). */
 @RestController
 @RequestMapping("/api/top50")
 public class Top50Controller {
 
-    private final Top50Service service;
+    private final DailyCollector collector;
     private final VolumeRankMapper rankMapper;
     private final ScanStatus status;
 
-    public Top50Controller(Top50Service service, VolumeRankMapper rankMapper, ScanStatus status) {
-        this.service = service;
+    public Top50Controller(DailyCollector collector, VolumeRankMapper rankMapper, ScanStatus status) {
+        this.collector = collector;
         this.rankMapper = rankMapper;
         this.status = status;
     }
@@ -39,9 +39,10 @@ public class Top50Controller {
                 rankMapper.findLatest());
     }
 
+    /** 당일 일봉 갱신 후 탑50 재계산(백그라운드). */
     @PostMapping("/refresh")
     public ResponseEntity<Top50Response> refresh() {
-        service.refresh();
+        collector.refreshLatest();
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(get());
     }
 

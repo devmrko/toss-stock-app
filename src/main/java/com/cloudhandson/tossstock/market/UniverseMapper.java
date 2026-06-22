@@ -8,7 +8,12 @@ import java.util.List;
 public interface UniverseMapper {
     long count();
 
+    long countWithoutSector();
+
     List<Universe> findAll();
 
     int insert(Universe u);
+
+    int updateSector(@org.apache.ibatis.annotations.Param("symbol") String symbol,
+                     @org.apache.ibatis.annotations.Param("sector") String sector);
 }

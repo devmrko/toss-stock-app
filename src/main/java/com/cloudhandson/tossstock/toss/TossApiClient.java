@@ -89,6 +89,34 @@ public class TossApiClient {
     record PricesResponse(List<TossPrice> result) {
     }
 
+    /** 일봉 페이지 — before(직전 nextBefore, ISO+TZ) 이전 구간. count≤200. */
+    public CandlePage getDailyCandlePage(String symbol, int count, String before) {
+        CandlesResponse body = restClient.get()
+                .uri(uri -> {
+                    uri.path("/api/v1/candles").queryParam("symbol", symbol)
+                            .queryParam("interval", "1d").queryParam("count", count);
+                    if (before != null && !before.isBlank()) {
+                        uri.queryParam("before", before);
+                    }
+                    return uri.build();
+                })
+                .header("Authorization", "Bearer " + auth.getAccessToken())
+                .retrieve()
+                .onStatus(s -> s.value() >= 400, (req, res) -> {
+                    throw new TossApiException("캔들 페이지 조회 실패: HTTP " + res.getStatusCode().value(),
+                            res.getStatusCode().value());
+                })
+                .body(CandlesResponse.class);
+        if (body == null || body.result() == null) {
+            return new CandlePage(List.of(), null);
+        }
+        return new CandlePage(body.result().candles(), body.result().nextBefore());
+    }
+
+    /** 일봉 페이지 결과(다음 페이지 커서 포함). */
+    public record CandlePage(List<TossCandle> candles, String nextBefore) {
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     record CandlesResponse(CandlesResult result) {
     }

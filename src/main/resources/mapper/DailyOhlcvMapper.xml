@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cloudhandson.tossstock.market.DailyOhlcvMapper">
+
+    <update id="upsert" parameterType="com.cloudhandson.tossstock.market.DailyOhlcv">
+        MERGE INTO daily_ohlcv t
+        USING (SELECT #{symbol} symbol, #{tradeDate} trade_date FROM dual) s
+        ON (t.symbol = s.symbol AND t.trade_date = s.trade_date)
+        WHEN MATCHED THEN UPDATE SET
+            open_p = #{openP}, high_p = #{highP}, low_p = #{lowP},
+            close_p = #{closeP}, volume = #{volume}
+        WHEN NOT MATCHED THEN INSERT
+            (symbol, trade_date, open_p, high_p, low_p, close_p, volume)
+        VALUES
+            (#{symbol}, #{tradeDate}, #{openP}, #{highP}, #{lowP}, #{closeP}, #{volume})
+    </update>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM daily_ohlcv
+    </select>
+
+    <select id="latestDate" resultType="java.time.LocalDate">
+        SELECT MAX(trade_date) FROM daily_ohlcv
+    </select>
+
+    <select id="topByVolumeOnLatest" resultType="com.cloudhandson.tossstock.market.VolumeRank">
+        SELECT d.symbol       AS symbol,
+               u.name         AS name,
+               u.market       AS market,
+               u.sector       AS sector,
+               d.close_p      AS lastPrice,
+               d.volume       AS volume
+        FROM daily_ohlcv d
+        JOIN (SELECT MAX(trade_date) md FROM daily_ohlcv) m ON d.trade_date = m.md
+        LEFT JOIN universe u ON u.symbol = d.symbol
+        ORDER BY d.volume DESC NULLS LAST
+        FETCH FIRST #{n} ROWS ONLY
+    </select>
+
+    <select id="prevCloseBefore" resultType="com.cloudhandson.tossstock.market.DailyOhlcv">
+        SELECT symbol AS symbol, close_p AS closeP
+        FROM daily_ohlcv
+        WHERE trade_date = (SELECT MAX(trade_date) FROM daily_ohlcv WHERE trade_date &lt; #{latest})
+    </select>
+
+</mapper>
