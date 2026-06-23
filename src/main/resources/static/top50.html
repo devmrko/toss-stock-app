@@ -20,6 +20,8 @@
     table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.06); }
     th,td { padding:10px 12px; text-align:right; border-bottom:1px solid var(--line); font-size:14px; }
     th { background:#f1f3f5; color:#495057; font-weight:600; font-size:12px; }
+    th.sortable{cursor:pointer;user-select:none;} th.sortable:hover{color:#212529;}
+    th .arr{font-size:10px;margin-left:3px;color:#868e96;}
     th:nth-child(1),td:nth-child(1){ text-align:center; width:44px; color:var(--muted); }
     th:nth-child(2),td:nth-child(2){ text-align:left; }
     td.num { font-variant-numeric:tabular-nums; }
@@ -56,7 +58,13 @@
     </div>
     <table>
       <thead>
-        <tr><th>#</th><th>종목</th><th>현재가</th><th>등락률</th><th>거래량</th></tr>
+        <tr>
+          <th class="sortable" data-sort="rnk">#<span class="arr"></span></th>
+          <th class="sortable" data-sort="name">종목<span class="arr"></span></th>
+          <th class="sortable" data-sort="lastPrice">현재가<span class="arr"></span></th>
+          <th class="sortable" data-sort="changeRate">등락률<span class="arr"></span></th>
+          <th class="sortable" data-sort="volume">거래량<span class="arr"></span></th>
+        </tr>
       </thead>
       <tbody id="rows"><tr><td class="empty" colspan="5">불러오는 중…</td></tr></tbody>
     </table>
@@ -104,16 +112,40 @@
           $ptxt.textContent = running ? `스캔 ${fmt.format(d.scanned)}/${fmt.format(d.total)}` : '';
         }
         $asof.textContent = d.asOf ? '기준 ' + new Date(d.asOf).toLocaleString('ko-KR') : (running ? '' : '아직 집계 전');
-        render(d.rows || []);
+        lastRows = d.rows || [];
+        render(lastRows);
       } catch (e) { $ptxt.textContent = '조회 실패'; }
     }
+
+    // 컬럼 정렬 (클라이언트, 폴링 무관)
+    let lastRows = [], sortKey = 'volume', sortDir = -1;
+    function sortRows(rows) {
+      return rows.slice().sort((a, b) => {
+        if (sortKey === 'name') return sortDir * String(a.name || '').localeCompare(String(b.name || ''));
+        const va = a[sortKey] == null ? -Infinity : Number(a[sortKey]);
+        const vb = b[sortKey] == null ? -Infinity : Number(b[sortKey]);
+        return sortDir * (va - vb);
+      });
+    }
+    function updateArrows() {
+      document.querySelectorAll('th.sortable').forEach(th => {
+        th.querySelector('.arr').textContent = th.dataset.sort === sortKey ? (sortDir < 0 ? '▼' : '▲') : '';
+      });
+    }
+    document.querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => {
+      const k = th.dataset.sort;
+      if (k === sortKey) sortDir = -sortDir; else { sortKey = k; sortDir = (k === 'name') ? 1 : -1; }
+      updateArrows();
+      render(lastRows);
+    }));
+    updateArrows();
 
     function render(rows) {
       if (!rows.length) {
         $rows.innerHTML = '<tr><td class="empty" colspan="5">아직 집계 결과가 없어요. “지금 갱신”을 누르면 전체 스캔이 시작됩니다(약 5분).</td></tr>';
         return;
       }
-      $rows.innerHTML = rows.map(q => {
+      $rows.innerHTML = sortRows(rows).map(q => {
         const rate = q.changeRate;
         const price = q.lastPrice != null ? fmt.format(q.lastPrice) : '-';
         const rateTxt = rate != null ? sign(rate) + rate.toFixed(2) + '%' : '-';

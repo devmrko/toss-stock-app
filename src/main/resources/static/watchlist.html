@@ -26,6 +26,8 @@
             box-shadow: 0 1px 3px rgba(0,0,0,.06); }
     th, td { padding: 11px 12px; text-align: right; border-bottom: 1px solid var(--line); font-size: 14px; }
     th { background: #f1f3f5; color: #495057; font-weight: 600; font-size: 12px; text-align: right; }
+    th.sortable{cursor:pointer;user-select:none;} th.sortable:hover{color:#212529;}
+    th .arr{font-size:10px;margin-left:3px;color:#868e96;}
     th:nth-child(1), td:nth-child(1) { text-align: center; width: 44px; color: var(--muted); }
     th:nth-child(2), td:nth-child(2) { text-align: left; }
     td.num { font-variant-numeric: tabular-nums; }
@@ -62,7 +64,14 @@
     </form>
     <table>
       <thead>
-        <tr><th>#</th><th>종목</th><th>현재가</th><th>등락률</th><th>거래량</th><th></th></tr>
+        <tr>
+          <th class="sortable" data-sort="rank">#<span class="arr"></span></th>
+          <th class="sortable" data-sort="name">종목<span class="arr"></span></th>
+          <th class="sortable" data-sort="lastPrice">현재가<span class="arr"></span></th>
+          <th class="sortable" data-sort="changeRate">등락률<span class="arr"></span></th>
+          <th class="sortable" data-sort="volume">거래량<span class="arr"></span></th>
+          <th></th>
+        </tr>
       </thead>
       <tbody id="rows">
         <tr><td class="empty" colspan="6">불러오는 중…</td></tr>
@@ -106,7 +115,8 @@
         ]);
         signals = sig || {};
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        render(await res.json());
+        lastRows = await res.json();
+        render(lastRows);
         $updated.textContent = '갱신 ' + new Date().toLocaleTimeString('ko-KR');
       } catch (e) {
         $updated.textContent = '갱신 실패 — 재시도 중';
@@ -118,7 +128,7 @@
         $rows.innerHTML = '<tr><td class="empty" colspan="6">워치리스트가 비어 있어요. 위에서 종목코드를 추가하세요.</td></tr>';
         return;
       }
-      $rows.innerHTML = quotes.map(q => {
+      $rows.innerHTML = sortRows(quotes).map(q => {
         const rate = q.changeRate;
         const price = q.lastPrice != null ? fmt.format(q.lastPrice) : '-';
         const rateTxt = rate != null ? sign(rate) + rate.toFixed(2) + '%' : '-';
@@ -187,6 +197,29 @@
         }).join('');
       } catch (e) { $mBody.innerHTML = '<div class="nm" style="padding:14px 0">불러오기 실패</div>'; }
     }
+
+    // 컬럼 정렬 (클라이언트, 폴링 무관)
+    let lastRows = [], sortKey = 'volume', sortDir = -1;
+    function sortRows(rows) {
+      return rows.slice().sort((a, b) => {
+        if (sortKey === 'name') return sortDir * String(a.name || '').localeCompare(String(b.name || ''));
+        const va = a[sortKey] == null ? -Infinity : Number(a[sortKey]);
+        const vb = b[sortKey] == null ? -Infinity : Number(b[sortKey]);
+        return sortDir * (va - vb);
+      });
+    }
+    function updateArrows() {
+      document.querySelectorAll('th.sortable').forEach(th => {
+        th.querySelector('.arr').textContent = th.dataset.sort === sortKey ? (sortDir < 0 ? '▼' : '▲') : '';
+      });
+    }
+    document.querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => {
+      const k = th.dataset.sort;
+      if (k === sortKey) sortDir = -sortDir; else { sortKey = k; sortDir = (k === 'name') ? 1 : -1; }
+      updateArrows();
+      render(lastRows);
+    }));
+    updateArrows();
 
     load();
     setInterval(load, 5000);
