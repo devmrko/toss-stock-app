@@ -168,7 +168,7 @@ public class NewsClassifier {
         return s == null ? "" : (s.length() > 200 ? s.substring(0, 200) : s);
     }
 
-    static int strength(String level) {
+    public static int strength(String level) {
         return switch (level == null ? "" : level.toUpperCase()) {
             case "S1", "S5" -> 2;
             case "S2", "S4" -> 1;

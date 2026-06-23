@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @Mapper
 public interface DailyOhlcvMapper {
@@ -21,4 +22,11 @@ public interface DailyOhlcvMapper {
 
     /** 특정 거래일 직전 거래일의 종가들(symbol→close). */
     List<DailyOhlcv> prevCloseBefore(@Param("latest") LocalDate latest);
+
+    /** 지정 종목들의 fromDate 이후 일봉(오름차순). 지표 계산용. */
+    List<DailyOhlcv> recentForSymbols(@Param("symbols") List<String> symbols,
+                                      @Param("fromDate") LocalDate fromDate);
+
+    /** 최신 거래일 상승/전체(전일 종가 대비). {UP, TOTAL}. */
+    Map<String, Object> breadth();
 }
