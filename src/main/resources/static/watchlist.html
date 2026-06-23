@@ -34,6 +34,15 @@
     .sector{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:#e7f5ff;color:#1971c2;margin-left:6px;font-weight:600;}
     .news-badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:6px;}
     .news-badge.nb-up{background:#ffe3e3;color:#e03131;} .news-badge.nb-down{background:#e7f5ff;color:#1971c2;}
+    tr.clickable{cursor:pointer;} tr.clickable:hover td{background:#f8f9fa;}
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:50;padding:40px 16px;overflow:auto;}
+    .modal{background:#fff;border-radius:14px;max-width:640px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.2);}
+    .modal-head{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--line);font-weight:700;}
+    .modal-head button{background:transparent;color:var(--muted);font-size:18px;padding:2px 8px;border:0;cursor:pointer;}
+    .modal-body{padding:6px 18px 18px;max-height:70vh;overflow:auto;}
+    .nrow{padding:12px 0;border-bottom:1px solid var(--line);} .nrow:last-child{border-bottom:0;}
+    .nrow .nt{font-weight:600;font-size:14px;line-height:1.4;margin-top:4px;} .nrow .nt a{color:inherit;text-decoration:none;}
+    .nrow .nm{color:var(--muted);font-size:12px;margin-top:4px;} .nrow .na{font-size:13px;color:#343a40;margin-top:6px;line-height:1.5;}
     .stale td { opacity: .5; }
     .empty { text-align: center; color: var(--muted); padding: 40px; }
     .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#37b24d; margin-right:6px; }
@@ -59,6 +68,13 @@
         <tr><td class="empty" colspan="6">불러오는 중…</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <div id="newsModal" class="modal-bg" style="display:none">
+    <div class="modal">
+      <div class="modal-head"><span id="modalTitle"></span><button id="modalClose">✕</button></div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
   </div>
 
   <script>
@@ -108,7 +124,7 @@
         const rateTxt = rate != null ? sign(rate) + rate.toFixed(2) + '%' : '-';
         const amt = q.changeAmount != null ? ' (' + sign(q.changeAmount) + fmt.format(q.changeAmount) + ')' : '';
         const vol = q.volume != null ? fmt.format(q.volume) : '-';
-        return `<tr class="${q.stale ? 'stale' : ''}">
+        return `<tr class="clickable ${q.stale ? 'stale' : ''}" data-symbol="${q.symbol}" data-sector="${q.sector || ''}" data-name="${q.name ?? ''}">
           <td>${q.rank}</td>
           <td><span class="name">${q.name ?? '-'}</span><span class="code">${q.symbol}</span>${q.sector ? `<span class="sector">${q.sector}</span>` : ''}${newsBadge(q.symbol, q.sector)}</td>
           <td class="num">${price}</td>
@@ -134,11 +150,43 @@
 
     $rows.addEventListener('click', async (e) => {
       const btn = e.target.closest('button.del');
-      if (!btn) return;
-      if (!confirm('이 종목을 워치리스트에서 삭제할까요?')) return;
-      await fetch('/api/watchlist/' + btn.dataset.id, { method: 'DELETE' });
-      load();
+      if (btn) {   // 삭제 버튼
+        if (!confirm('이 종목을 워치리스트에서 삭제할까요?')) return;
+        await fetch('/api/watchlist/' + btn.dataset.id, { method: 'DELETE' });
+        load();
+        return;
+      }
+      const tr = e.target.closest('tr');   // 행 클릭 → 뉴스 모달
+      if (tr && tr.dataset.symbol) openNews(tr.dataset.symbol, tr.dataset.sector, tr.dataset.name);
     });
+
+    // 뉴스 모달
+    const $modal = document.getElementById('newsModal'), $mTitle = document.getElementById('modalTitle'), $mBody = document.getElementById('modalBody');
+    const closeModal = () => $modal.style.display = 'none';
+    document.getElementById('modalClose').addEventListener('click', closeModal);
+    $modal.addEventListener('click', e => { if (e.target === $modal) closeModal(); });
+
+    async function openNews(symbol, sector, name) {
+      $mTitle.textContent = (name || symbol) + ' · ' + symbol + (sector ? ' · ' + sector : '');
+      $mBody.innerHTML = '<div class="nm" style="padding:14px 0">불러오는 중…</div>';
+      $modal.style.display = 'flex';
+      try {
+        const reqs = [fetch('/api/news?limit=20&key=' + encodeURIComponent(symbol)).then(r => r.json())];
+        if (sector) reqs.push(fetch('/api/news?limit=20&key=' + encodeURIComponent(sector)).then(r => r.json()));
+        const seen = new Set(), merged = [];
+        (await Promise.all(reqs)).flat().forEach(n => { if (!seen.has(n.id)) { seen.add(n.id); merged.push(n); } });
+        merged.sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
+        if (!merged.length) { $mBody.innerHTML = '<div class="nm" style="padding:14px 0">관련 활성 뉴스가 없어요.</div>'; return; }
+        $mBody.innerHTML = merged.map(n => {
+          const tags = (n.sentiment || '').split(',').map(p => { const [k, l] = p.split(':'); return { k, l }; })
+            .filter(t => (t.k === symbol || t.k === sector) && t.l !== 'S3')
+            .map(t => `<span class="news-badge nb-${sDir(t.l)}">${sDir(t.l)==='down'?'🔴':'🟢'}${t.l} ${sLabel(t.l)}</span>`).join('');
+          const when = n.publishedAt ? new Date(n.publishedAt).toLocaleString('ko-KR') : '';
+          const title = n.url ? `<a href="${n.url}" target="_blank">${n.title}</a>` : n.title;
+          return `<div class="nrow"><div>${tags}</div><div class="nt">${title}</div><div class="nm">${n.source||''} · ${when} · ${n.kind||''}</div>${n.rationale?`<div class="na">${n.rationale}</div>`:''}</div>`;
+        }).join('');
+      } catch (e) { $mBody.innerHTML = '<div class="nm" style="padding:14px 0">불러오기 실패</div>'; }
+    }
 
     load();
     setInterval(load, 5000);
