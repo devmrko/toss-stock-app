@@ -7,6 +7,7 @@ public record WatchlistQuote(
         Long id,
         String symbol,
         String name,
+        String sector,       // 섹터(섹터 뉴스 뱃지용), 없으면 null
         BigDecimal lastPrice,
         BigDecimal prevClose,
         BigDecimal changeAmount,
@@ -17,12 +18,12 @@ public record WatchlistQuote(
         boolean stale) {     // 부분 조회 실패 표시
 
     public WatchlistQuote withRank(int newRank) {
-        return new WatchlistQuote(id, symbol, name, lastPrice, prevClose, changeAmount,
+        return new WatchlistQuote(id, symbol, name, sector, lastPrice, prevClose, changeAmount,
                 changeRate, volume, currency, newRank, stale);
     }
 
     public WatchlistQuote withStale() {
-        return new WatchlistQuote(id, symbol, name, lastPrice, prevClose, changeAmount,
+        return new WatchlistQuote(id, symbol, name, sector, lastPrice, prevClose, changeAmount,
                 changeRate, volume, currency, rank, true);
     }
 }

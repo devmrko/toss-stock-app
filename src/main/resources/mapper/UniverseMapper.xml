@@ -23,6 +23,10 @@
         SELECT symbol FROM universe WHERE name = #{name} FETCH FIRST 1 ROWS ONLY
     </select>
 
+    <select id="findSectorBySymbol" parameterType="string" resultType="string">
+        SELECT sector FROM universe WHERE symbol = #{symbol}
+    </select>
+
     <insert id="insert" parameterType="com.cloudhandson.tossstock.market.Universe">
         INSERT INTO universe (symbol, name, market, ksic, product)
         VALUES (#{symbol}, #{name}, #{market}, #{ksic}, #{product})

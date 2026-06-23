@@ -24,6 +24,7 @@ class WatchlistQuoteServiceTest {
     @Mock WatchlistMapper mapper;
     @Mock TossApiClient toss;
     @Mock CandleCache candleCache;
+    @Mock com.cloudhandson.tossstock.market.UniverseMapper universeMapper;
     @InjectMocks WatchlistQuoteService service;
 
     private static Watchlist wl(long id, String symbol) {
@@ -68,7 +69,7 @@ class WatchlistQuoteServiceTest {
     @Test
     void computes_change_rate_from_prev_close() {
         WatchlistQuote q = service.toRow(wl(1, "005930"), price("005930", "352500"),
-                "삼성전자", candles("43030480", "350500"));
+                "삼성전자", "반도체", candles("43030480", "350500"));
 
         assertThat(q.lastPrice()).isEqualByComparingTo("352500");
         assertThat(q.prevClose()).isEqualByComparingTo("350500");
@@ -81,7 +82,7 @@ class WatchlistQuoteServiceTest {
     void null_prev_close_yields_null_change() {
         List<TossCandle> single = List.of(
                 new TossCandle("2026-06-22T00:00:00+09:00", "1", "1", "1", "1", "500", "KRW"));
-        WatchlistQuote q = service.toRow(wl(1, "NEW"), price("NEW", "1000"), "신규", single);
+        WatchlistQuote q = service.toRow(wl(1, "NEW"), price("NEW", "1000"), "신규", null, single);
 
         assertThat(q.changeRate()).isNull();
         assertThat(q.changeAmount()).isNull();

@@ -1,5 +1,6 @@
 package com.cloudhandson.tossstock.watchlist;
 
+import com.cloudhandson.tossstock.market.UniverseMapper;
 import com.cloudhandson.tossstock.toss.CandleCache;
 import com.cloudhandson.tossstock.toss.TossApiClient;
 import com.cloudhandson.tossstock.toss.dto.TossCandle;
@@ -32,11 +33,14 @@ public class WatchlistQuoteService {
     private final WatchlistMapper mapper;
     private final TossApiClient toss;
     private final CandleCache candleCache;
+    private final UniverseMapper universeMapper;
 
-    public WatchlistQuoteService(WatchlistMapper mapper, TossApiClient toss, CandleCache candleCache) {
+    public WatchlistQuoteService(WatchlistMapper mapper, TossApiClient toss, CandleCache candleCache,
+                                 UniverseMapper universeMapper) {
         this.mapper = mapper;
         this.toss = toss;
         this.candleCache = candleCache;
+        this.universeMapper = universeMapper;
     }
 
     public List<WatchlistQuote> assemble() {
@@ -54,13 +58,14 @@ public class WatchlistQuoteService {
         List<WatchlistQuote> quotes = new ArrayList<>();
         for (Watchlist r : rows) {
             String name = nameBySym.containsKey(r.getSymbol()) ? nameBySym.get(r.getSymbol()).name() : null;
+            String sector = safeSector(r.getSymbol());
             TossPrice price = priceBySym.get(r.getSymbol());
             try {
                 List<TossCandle> candles = candleCache.get(r.getSymbol());
-                quotes.add(toRow(r, price, name, candles));
+                quotes.add(toRow(r, price, name, sector, candles));
             } catch (RuntimeException e) {
                 log.warn("quote 조립 부분 실패 symbol={}: {}", r.getSymbol(), e.getMessage());
-                quotes.add(toRow(r, price, name, List.of()).withStale());
+                quotes.add(toRow(r, price, name, sector, List.of()).withStale());
             }
         }
 
@@ -78,8 +83,16 @@ public class WatchlistQuoteService {
         return ranked;
     }
 
+    private String safeSector(String symbol) {
+        try {
+            return universeMapper.findSectorBySymbol(symbol);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     /** 순수 함수: 한 종목 행 + 등락률 계산. 외부 호출 없음(테스트 대상). */
-    WatchlistQuote toRow(Watchlist r, TossPrice price, String name, List<TossCandle> candles) {
+    WatchlistQuote toRow(Watchlist r, TossPrice price, String name, String sector, List<TossCandle> candles) {
         BigDecimal last = price == null ? null : toDecimal(price.lastPrice());
         Long volume = candles.isEmpty() ? null : toLong(candles.get(0).volume());
         BigDecimal prevClose = candles.size() >= 2 ? toDecimal(candles.get(1).closePrice()) : null;
@@ -95,7 +108,7 @@ public class WatchlistQuoteService {
         String currency = price != null ? price.currency()
                 : (!candles.isEmpty() ? candles.get(0).currency() : null);
 
-        return new WatchlistQuote(r.getId(), r.getSymbol(), name == null ? "-" : name,
+        return new WatchlistQuote(r.getId(), r.getSymbol(), name == null ? "-" : name, sector,
                 last, prevClose, changeAmount, changeRate, volume, currency, 0, false);
     }
 

@@ -23,5 +23,8 @@ public interface StockNewsMapper {
     /** 활성(미만료) ANALYZED 신호. key 가 null 이면 전체, 아니면 targets LIKE. S3-only 제외. */
     List<StockNews> active(@Param("key") String key, @Param("limit") int limit);
 
+    /** 활성(미만료) 신호들의 sentiment CSV 목록 (뱃지 집계용). */
+    List<String> activeSentiments();
+
     int expireOld();
 }

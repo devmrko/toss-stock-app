@@ -31,6 +31,9 @@
     td.num { font-variant-numeric: tabular-nums; }
     .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
     .name { font-weight: 600; } .code { color: var(--muted); font-size: 12px; margin-left: 6px; }
+    .sector{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:#e7f5ff;color:#1971c2;margin-left:6px;font-weight:600;}
+    .news-badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:6px;}
+    .news-badge.nb-up{background:#ffe3e3;color:#e03131;} .news-badge.nb-down{background:#e7f5ff;color:#1971c2;}
     .stale td { opacity: .5; }
     .empty { text-align: center; color: var(--muted); padding: 40px; }
     .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#37b24d; margin-right:6px; }
@@ -66,9 +69,26 @@
     function cls(rate) { return rate == null ? 'flat' : rate > 0 ? 'up' : rate < 0 ? 'down' : 'flat'; }
     function sign(n) { return n > 0 ? '+' : ''; }
 
+    let signals = {};
+    const sDir = lv => (lv==='S1'||lv==='S2') ? 'down' : (lv==='S4'||lv==='S5') ? 'up' : 'flat';
+    const sStr = lv => ({S1:2,S2:1,S4:1,S5:2})[lv] || 0;
+    const sLabel = lv => ({S1:'강한악재',S2:'약한악재',S4:'약한호재',S5:'강한호재'})[lv] || '';
+    function newsBadge(symbol, sector) {
+      const a = signals[symbol], b = signals[sector];
+      const lv = (sStr(a) >= sStr(b)) ? a : b;
+      if (!lv || lv === 'S3') return '';
+      const e = sDir(lv)==='down' ? '🔴' : '🟢';
+      const on = (lv===a) ? symbol : sector;
+      return `<span class="news-badge nb-${sDir(lv)}" title="${on} ${sLabel(lv)}">${e}${lv}</span>`;
+    }
+
     async function load() {
       try {
-        const res = await fetch('/api/watchlist/quotes');
+        const [res, sig] = await Promise.all([
+          fetch('/api/watchlist/quotes'),
+          fetch('/api/news/signals').then(r => r.ok ? r.json() : {}).catch(() => ({}))
+        ]);
+        signals = sig || {};
         if (!res.ok) throw new Error('HTTP ' + res.status);
         render(await res.json());
         $updated.textContent = '갱신 ' + new Date().toLocaleTimeString('ko-KR');
@@ -90,7 +110,7 @@
         const vol = q.volume != null ? fmt.format(q.volume) : '-';
         return `<tr class="${q.stale ? 'stale' : ''}">
           <td>${q.rank}</td>
-          <td><span class="name">${q.name ?? '-'}</span><span class="code">${q.symbol}</span></td>
+          <td><span class="name">${q.name ?? '-'}</span><span class="code">${q.symbol}</span>${q.sector ? `<span class="sector">${q.sector}</span>` : ''}${newsBadge(q.symbol, q.sector)}</td>
           <td class="num">${price}</td>
           <td class="num ${cls(rate)}">${rateTxt}<span style="font-size:11px">${amt}</span></td>
           <td class="num">${vol}</td>

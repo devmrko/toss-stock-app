@@ -11,7 +11,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cloudhandson.tossstock.news.NewsSignals;
+
 import java.util.List;
+import java.util.Map;
 
 /** 뉴스 S1-S5 조회/수집. key = 005930 | 반도체 | MARKET (없으면 전체 활성). */
 @RestController
@@ -31,6 +34,12 @@ public class NewsController {
                                 @RequestParam(defaultValue = "100") int limit) {
         String k = (key == null || key.isBlank()) ? null : key.trim();
         return mapper.active(k, Math.min(limit, 300));
+    }
+
+    /** 활성 뉴스 시그널 맵: key(코드/섹터/MARKET) → 최강 S레벨. 탑50/워치리스트 뱃지용. */
+    @GetMapping("/signals")
+    public Map<String, String> signals() {
+        return NewsSignals.aggregate(mapper.activeSentiments());
     }
 
     @PostMapping("/ingest")
