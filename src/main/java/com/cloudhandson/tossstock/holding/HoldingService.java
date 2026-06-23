@@ -10,13 +10,17 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-/** 보유 목록 + 현재가/지표 보강. */
+/** 거래원장 → 종목 단위 평균단가 집계 + 현재가/지표 보강. (#433) */
 @Service
 public class HoldingService {
 
@@ -35,12 +39,15 @@ public class HoldingService {
         this.dailyMapper = dailyMapper;
     }
 
-    public List<HoldingView> list() {
+    public List<PositionView> list() {
         List<Holding> rows = mapper.findAll();
         if (rows.isEmpty()) {
             return List.of();
         }
-        List<String> symbols = rows.stream().map(Holding::getSymbol).distinct().toList();
+        // 종목별 거래 묶음(원장 정렬 = buy_at desc 유지)
+        Map<String, List<Holding>> bySym = rows.stream()
+                .collect(Collectors.groupingBy(Holding::getSymbol, LinkedHashMap::new, Collectors.toList()));
+        List<String> symbols = List.copyOf(bySym.keySet());
 
         Map<String, BigDecimal> priceBySym = safe(() -> toss.getPrices(symbols)).stream()
                 .filter(p -> p.lastPrice() != null)
@@ -49,16 +56,20 @@ public class HoldingService {
                 .collect(Collectors.toMap(TossStock::symbol, TossStock::name, (a, b) -> a));
 
         LocalDateTime now = LocalDateTime.now();
-        return rows.stream().map(h -> {
-            String sector = safeSector(h.getSymbol());
-            BigDecimal cur = priceBySym.get(h.getSymbol());
+        return bySym.entrySet().stream().map(e -> {
+            String sym = e.getKey();
+            List<Holding> trades = e.getValue();
+            BigDecimal cur = priceBySym.get(sym);
             BigDecimal peak = null, trough = null;
-            if (h.getBuyAt() != null) {
-                Map<String, Object> r = dailyMapper.rangeSince(h.getSymbol(), h.getBuyAt().toLocalDate());
+            LocalDate firstBuyDate = trades.stream()
+                    .filter(t -> !t.isSell()).map(Holding::getBuyAt).filter(Objects::nonNull)
+                    .map(LocalDateTime::toLocalDate).min(Comparator.naturalOrder()).orElse(null);
+            if (firstBuyDate != null) {
+                Map<String, Object> r = dailyMapper.rangeSince(sym, firstBuyDate);
                 peak = dec(r == null ? null : r.get("MAXHIGH"));
                 trough = dec(r == null ? null : r.get("MINLOW"));
             }
-            return HoldingCalc.of(h, nameBySym.get(h.getSymbol()), sector, cur, peak, trough, now);
+            return PositionCalc.of(sym, nameBySym.get(sym), safeSector(sym), trades, cur, peak, trough, now);
         }).toList();
     }
 

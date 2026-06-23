@@ -31,7 +31,22 @@
     tr.danger td { background:#fff5f5; }
     .stopbadge{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;background:#ffe3e3;color:#e03131;margin-left:6px;}
     .empty{text-align:center;color:var(--muted);padding:40px;}
-  
+    .seg{display:inline-flex;border:1px solid #ced4da;border-radius:8px;overflow:hidden;}
+    .seg button{background:#fff;color:#495057;border:0;border-radius:0;padding:8px 14px;font-size:13px;font-weight:600;}
+    .seg button.on[data-side=BUY]{background:var(--up);color:#fff;}
+    .seg button.on[data-side=SELL]{background:var(--down);color:#fff;}
+    button.bf{background:transparent;color:#1971c2;padding:4px 7px;font-size:13px;}
+    button.bf:hover{background:#e7f5ff;}
+    button.exp{background:transparent;color:var(--muted);padding:4px 7px;font-size:13px;}
+    button.exp:hover{background:#f1f3f5;}
+    .actcell{white-space:nowrap;}
+    tr.trades > td{background:#fbfcfd;padding:0;}
+    .tradetbl{width:100%;border-collapse:collapse;}
+    .tradetbl td{border-bottom:1px solid #f1f3f5;padding:7px 12px;font-size:13px;}
+    .sidetag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;}
+    .sidetag.BUY{background:#ffe3e3;color:#e03131;} .sidetag.SELL{background:#e7f1ff;color:#1971c2;}
+    .qzero{color:#adb5bd;}
+
     .topnav{display:flex;gap:4px;padding:8px 24px;background:#fff;border-bottom:1px solid #e9ecef;flex-wrap:wrap;position:sticky;top:0;z-index:40;}
     .topnav a{padding:7px 14px;border-radius:8px;text-decoration:none;color:#495057;font-size:14px;font-weight:600;}
     .topnav a:hover{background:#f1f3f5;}
@@ -58,21 +73,25 @@
   </header>
   <div class="wrap">
     <form id="addForm">
+      <span class="seg" id="sideSeg">
+        <button type="button" class="on" data-side="BUY">매수</button>
+        <button type="button" data-side="SELL">매도</button>
+      </span>
       <span class="search-wrap"><input id="hdSearch" placeholder="종목명/코드 검색 (삼성, apple…)" autocomplete="off" required/><div class="search-dd" style="display:none"></div></span>
-      <label>매수일시 <input name="buyAt" type="datetime-local" required/></label>
-      <input name="buyPrice" type="number" step="0.01" min="0" placeholder="매수가" required/>
-      <input name="quantity" type="number" step="1" min="0" placeholder="수량(선택)"/>
+      <label>일시 <input name="buyAt" type="datetime-local" required/></label>
+      <input name="buyPrice" type="number" step="0.01" min="0" placeholder="가격" required/>
+      <input name="quantity" type="number" step="1" min="0" placeholder="수량"/>
       <label>손절 <input name="stopPct" type="number" step="0.5" min="0" value="8"/>%</label>
-      <button type="submit">+ 추가</button>
+      <button type="submit">+ 거래 추가</button>
     </form>
     <div id="summary" class="summary" style="display:none"></div>
     <table>
       <thead>
         <tr>
-          <th>종목</th><th>매수일</th><th>매수가</th><th>현재가</th><th>수익률</th>
-          <th>수량</th><th>평가손익</th><th>보유일</th>
-          <th title="매수가×(1−손절%)">스탑가(-N%)</th><th title="현재가 대비 스탑까지 여유">스탑까지</th>
-          <th title="매수 후 최고가">매수후고점</th><th title="고점 대비 현재 낙폭">고점대비</th><th></th>
+          <th>종목</th><th title="순보유=Σ매수−Σ매도">순수량</th><th>평단가</th><th>현재가</th><th title="(현재−평단)/평단">수익률</th>
+          <th title="순수량×(현재−평단)">평가손익</th><th title="실현된 매도 손익">실현손익</th><th>보유일</th>
+          <th title="평단×(1−손절%)">스탑가(-N%)</th><th title="현재가 대비 스탑까지 여유">스탑까지</th>
+          <th title="최초매수 후 최고가">매수후고점</th><th title="고점 대비 현재 낙폭">고점대비</th><th></th>
         </tr>
       </thead>
       <tbody id="rows"><tr><td class="empty" colspan="13">불러오는 중…</td></tr></tbody>
@@ -96,37 +115,52 @@
       } catch (e) { $updated.textContent = '조회 실패'; }
     }
 
+    const expanded = new Set();  // 펼친 종목(갱신해도 유지)
     function render(rows) {
       if (!rows.length) {
-        $rows.innerHTML = '<tr><td class="empty" colspan="13">보유 항목이 없어요. 위에서 종목·매수일·매수가를 입력해 추가하세요.</td></tr>';
+        $rows.innerHTML = '<tr><td class="empty" colspan="13">보유 종목이 없어요. 위에서 매수 거래를 추가하세요.</td></tr>';
         $sum.style.display = 'none';
         return;
       }
-      let totPnl = 0, hasPnl = false, retSum = 0, retCnt = 0;
+      let totU = 0, hasU = false, totR = 0, hasR = false, retSum = 0, retCnt = 0;
       $rows.innerHTML = rows.map(h => {
-        if (h.returnAmount != null) { totPnl += h.returnAmount; hasPnl = true; }
-        if (h.returnPct != null) { retSum += h.returnPct; retCnt++; }
+        if (h.unrealizedAmount != null) { totU += h.unrealizedAmount; hasU = true; }
+        if (h.realizedAmount != null) { totR += h.realizedAmount; hasR = true; }
+        if (h.unrealizedPct != null) { retSum += h.unrealizedPct; retCnt++; }
         const danger = h.belowStop;
         const stopHit = h.stopHitSinceBuy && !h.belowStop;
-        return `<tr class="${danger ? 'danger' : ''}">
+        const open = expanded.has(h.symbol);
+        const qty = h.netQty == null ? '<span class="dimv">-</span>'
+          : (h.netQty === 0 ? '<span class="qzero">0 청산</span>' : fmt.format(h.netQty));
+        const row = `<tr class="${danger ? 'danger' : ''}">
           <td><span class="name">${h.name ?? '-'}</span><span class="code">${h.symbol}</span>${h.sector ? `<span class="sector">${h.sector}</span>` : ''}${danger ? '<span class="stopbadge">🔴 손절</span>' : ''}</td>
-          <td class="num">${when(h.buyAt)}</td>
-          <td class="num">${n(h.buyPrice)}</td>
+          <td class="num">${qty}</td>
+          <td class="num">${n(h.avgCost, 2)}</td>
           <td class="num">${n(h.currentPrice)}</td>
-          <td class="num">${pct(h.returnPct)}</td>
-          <td class="num">${h.quantity == null ? '<span class="dimv">-</span>' : fmt.format(h.quantity)}</td>
-          <td class="num ${cls(h.returnAmount)}">${h.returnAmount == null ? '<span class="dimv">-</span>' : sign(h.returnAmount) + n(h.returnAmount)}</td>
+          <td class="num">${pct(h.unrealizedPct)}</td>
+          <td class="num ${cls(h.unrealizedAmount)}">${h.unrealizedAmount == null ? '<span class="dimv">-</span>' : sign(h.unrealizedAmount) + n(h.unrealizedAmount)}</td>
+          <td class="num ${cls(h.realizedAmount)}">${h.realizedAmount == null ? '<span class="dimv">-</span>' : sign(h.realizedAmount) + n(h.realizedAmount)}</td>
           <td class="num">${h.daysHeld == null ? '-' : h.daysHeld + '일'}</td>
-          <td class="num">${n(h.stopPrice)} <span class="dimv" style="font-size:11px">-${h.stopPct}%</span></td>
+          <td class="num">${n(h.stopPrice, 2)} <span class="dimv" style="font-size:11px">-${h.stopPct}%</span></td>
           <td class="num">${h.stopDistPct == null ? '<span class="dimv">-</span>' : `<span class="${h.stopDistPct < 0 ? 'up' : 'down'}">${h.stopDistPct > 0 ? '+' : ''}${h.stopDistPct.toFixed(1)}%</span>`}${stopHit ? ' <span title="보유 중 스탑가를 터치한 적 있음" class="dimv">⚠터치</span>' : ''}</td>
           <td class="num">${n(h.peakSinceBuy)}</td>
           <td class="num">${h.ddFromPeak == null ? '<span class="dimv">-</span>' : `<span class="down">-${h.ddFromPeak.toFixed(2)}%</span>`}</td>
-          <td><button class="del" data-id="${h.id}" title="삭제">✕</button></td>
+          <td class="actcell"><button class="bf" data-sym="${h.symbol}" data-from="${h.firstBuyAt ? h.firstBuyAt.slice(0, 10) : ''}" title="일봉 백필">↻</button><button class="exp" data-sym="${h.symbol}" title="거래내역">${open ? '▾' : '▸'}${h.trades.length}</button></td>
         </tr>`;
+        const sub = open ? `<tr class="trades"><td colspan="13"><table class="tradetbl">${h.trades.map(t => `
+          <tr><td style="text-align:left"><span class="sidetag ${t.side}">${t.side === 'SELL' ? '매도' : '매수'}</span></td>
+          <td class="num">${when(t.tradedAt)}</td>
+          <td class="num">${n(t.price, 2)}</td>
+          <td class="num">${t.quantity == null ? '<span class="dimv">-</span>' : fmt.format(t.quantity) + '주'}</td>
+          <td class="num">${pct(t.returnPct)}</td>
+          <td style="text-align:right"><button class="del" data-id="${t.id}" title="이 거래 삭제">✕</button></td></tr>`).join('')}</table></td></tr>` : '';
+        return row + sub;
       }).join('');
       $sum.style.display = 'block';
       const avg = retCnt ? (retSum / retCnt) : null;
-      $sum.innerHTML = `📊 보유 <b>${rows.length}</b>종목 · 평균 수익률 ${pct(avg)} · 총 평가손익 ${hasPnl ? `<b class="${cls(totPnl)}">${sign(totPnl)}${n(totPnl)}원</b>` : '<span class="dimv">수량 입력시 표시</span>'}`;
+      $sum.innerHTML = `📊 보유 <b>${rows.length}</b>종목 · 평균 수익률 ${pct(avg)}`
+        + ` · 평가손익 ${hasU ? `<b class="${cls(totU)}">${sign(totU)}${n(totU)}원</b>` : '<span class="dimv">-</span>'}`
+        + ` · 실현손익 ${hasR ? `<b class="${cls(totR)}">${sign(totR)}${n(totR)}원</b>` : '<span class="dimv">-</span>'}`;
     }
 
     // 종목 검색 자동완성
@@ -166,22 +200,32 @@
       function pick(h) { if (!h) return; input.value = h.name + ' (' + h.symbol + ')'; onPick(h.symbol); hide(); }
     }
 
+    // 매수/매도 토글
+    let side = 'BUY';
+    document.getElementById('sideSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-side]'); if (!b) return;
+      side = b.dataset.side;
+      [...e.currentTarget.children].forEach(x => x.classList.toggle('on', x === b));
+    });
+
     let hdChosen = null;
     document.getElementById('addForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = e.target;
       const sym = hdChosen || extractCode(document.getElementById('hdSearch').value);
       if (!sym) { alert('종목을 검색해 선택하세요.'); return; }
+      const qty = f.quantity.value ? parseInt(f.quantity.value, 10) : null;
+      if (side === 'SELL' && !qty) { alert('매도는 수량이 필수입니다.'); return; }
       const body = {
-        symbol: sym,
+        symbol: sym, side,
         buyAt: f.buyAt.value || null,
         buyPrice: parseFloat(f.buyPrice.value),
-        quantity: f.quantity.value ? parseInt(f.quantity.value, 10) : null,
+        quantity: qty,
         stopPct: f.stopPct.value ? parseFloat(f.stopPct.value) : 8,
         memo: null
       };
       const res = await fetch('/api/holdings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (!res.ok) { alert('추가 실패 (HTTP ' + res.status + ')'); return; }
+      if (!res.ok) { alert('추가 실패 (HTTP ' + res.status + ') ' + (await res.text().catch(() => ''))); return; }
       document.getElementById('hdSearch').value = ''; f.buyPrice.value = ''; f.quantity.value = ''; hdChosen = null;
       document.getElementById('hdSearch').focus();
       load();
@@ -189,10 +233,30 @@
     attachSearch(document.getElementById('hdSearch'), s => { hdChosen = s; });
 
     $rows.addEventListener('click', async (e) => {
-      const btn = e.target.closest('button.del'); if (!btn) return;
-      if (!confirm('이 보유 항목을 삭제할까요?')) return;
-      await fetch('/api/holdings/' + btn.dataset.id, { method: 'DELETE' });
-      load();
+      const del = e.target.closest('button.del');
+      if (del) {
+        if (!confirm('이 거래를 삭제할까요?')) return;
+        await fetch('/api/holdings/' + del.dataset.id, { method: 'DELETE' });
+        load(); return;
+      }
+      const exp = e.target.closest('button.exp');
+      if (exp) {
+        const s = exp.dataset.sym;
+        expanded.has(s) ? expanded.delete(s) : expanded.add(s);
+        load(); return;
+      }
+      const bf = e.target.closest('button.bf');
+      if (bf) {
+        const s = bf.dataset.sym, from = bf.dataset.from;
+        bf.disabled = true; bf.textContent = '…';
+        try {
+          const url = '/api/daily/backfill-symbol?symbol=' + encodeURIComponent(s) + (from ? '&from=' + from : '');
+          const r = await fetch(url, { method: 'POST' });
+          bf.textContent = r.ok ? '✓' : '✕';
+        } catch { bf.textContent = '✕'; }
+        setTimeout(() => { bf.disabled = false; bf.textContent = '↻'; }, 2500);
+        return;
+      }
     });
 
     // 매수일시 기본값 = 지금

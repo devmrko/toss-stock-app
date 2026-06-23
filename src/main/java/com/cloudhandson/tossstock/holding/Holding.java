@@ -3,19 +3,23 @@ package com.cloudhandson.tossstock.holding;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/** 수동 입력 보유 1건. */
+/** 수동 입력 거래 1건(원장). side=BUY/SELL. (#433) */
 public class Holding {
     private Long id;
     private String symbol;
-    private LocalDateTime buyAt;
-    private BigDecimal buyPrice;
-    private Long quantity;     // 수량(선택)
+    private String side = "BUY";  // BUY | SELL (#433)
+    private LocalDateTime buyAt;   // 거래일시
+    private BigDecimal buyPrice;   // 체결가
+    private Long quantity;     // 수량(매도는 필수)
     private Double stopPct;    // 하드스탑 %(기본 8)
     private String memo;
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    public String getSide() { return side; }
+    public void setSide(String side) { this.side = side; }
+    public boolean isSell() { return "SELL".equalsIgnoreCase(side); }
     public String getSymbol() { return symbol; }
     public void setSymbol(String symbol) { this.symbol = symbol; }
     public LocalDateTime getBuyAt() { return buyAt; }

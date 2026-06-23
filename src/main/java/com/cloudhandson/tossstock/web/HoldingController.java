@@ -3,7 +3,7 @@ package com.cloudhandson.tossstock.web;
 import com.cloudhandson.tossstock.holding.Holding;
 import com.cloudhandson.tossstock.holding.HoldingMapper;
 import com.cloudhandson.tossstock.holding.HoldingService;
-import com.cloudhandson.tossstock.holding.HoldingView;
+import com.cloudhandson.tossstock.holding.PositionView;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -36,7 +36,7 @@ public class HoldingController {
     }
 
     @GetMapping
-    public List<HoldingView> list() {
+    public List<PositionView> list() {
         return service.list();
     }
 
@@ -46,18 +46,25 @@ public class HoldingController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "symbol 은 필수입니다");
         }
         if (req.buyPrice() == null || req.buyPrice().signum() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "매수가는 0보다 커야 합니다");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "가격은 0보다 커야 합니다");
+        }
+        boolean sell = "SELL".equalsIgnoreCase(req.side());
+        if (sell && (req.quantity() == null || req.quantity() <= 0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "매도는 수량이 필수입니다");
         }
         Holding h = new Holding();
         h.setSymbol(req.symbol().trim());
+        h.setSide(sell ? "SELL" : "BUY");
         h.setBuyAt(req.buyAt() != null ? req.buyAt() : LocalDateTime.now());
         h.setBuyPrice(req.buyPrice());
         h.setQuantity(req.quantity());
         h.setStopPct(req.stopPct() != null ? req.stopPct() : 8.0);
         h.setMemo(req.memo());
         mapper.insert(h);
-        // 등록 시 구매일부터 현재까지 일봉 백필(지표·고점/MDD 채움)
-        collector.backfillSymbol(h.getSymbol(), h.getBuyAt().toLocalDate());
+        // 매수 등록 시에만 거래일부터 현재까지 일봉 백필(지표·고점/MDD 채움). 매도는 불필요.
+        if (!sell) {
+            collector.backfillSymbol(h.getSymbol(), h.getBuyAt().toLocalDate());
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(h);
     }
 
@@ -67,7 +74,7 @@ public class HoldingController {
         return ResponseEntity.noContent().build();
     }
 
-    public record AddRequest(String symbol, LocalDateTime buyAt, BigDecimal buyPrice,
+    public record AddRequest(String symbol, String side, LocalDateTime buyAt, BigDecimal buyPrice,
                              Long quantity, Double stopPct, String memo) {
     }
 }

@@ -4,15 +4,15 @@
 <mapper namespace="com.cloudhandson.tossstock.holding.HoldingMapper">
 
     <select id="findAll" resultType="com.cloudhandson.tossstock.holding.Holding">
-        SELECT id, symbol, buy_at, buy_price, quantity, stop_pct, memo, created_at
+        SELECT id, symbol, side, buy_at, buy_price, quantity, stop_pct, memo, created_at
         FROM holding
         ORDER BY buy_at DESC, id DESC
     </select>
 
     <insert id="insert" parameterType="com.cloudhandson.tossstock.holding.Holding"
             useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
-        INSERT INTO holding (symbol, buy_at, buy_price, quantity, stop_pct, memo)
-        VALUES (#{symbol}, #{buyAt}, #{buyPrice}, #{quantity}, #{stopPct}, #{memo})
+        INSERT INTO holding (symbol, side, buy_at, buy_price, quantity, stop_pct, memo)
+        VALUES (#{symbol}, #{side}, #{buyAt}, #{buyPrice}, #{quantity}, #{stopPct}, #{memo})
     </insert>
 
     <delete id="deleteById">
