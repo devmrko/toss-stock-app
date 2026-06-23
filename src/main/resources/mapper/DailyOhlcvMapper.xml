@@ -57,6 +57,12 @@
         ORDER BY symbol, trade_date
     </select>
 
+    <select id="rangeSince" resultType="map">
+        SELECT MAX(high_p) AS maxhigh, MIN(low_p) AS minlow
+        FROM daily_ohlcv
+        WHERE symbol = #{symbol} AND trade_date &gt;= #{fromDate}
+    </select>
+
     <select id="breadth" resultType="map">
         SELECT
             SUM(CASE WHEN t.close_p &gt; p.close_p THEN 1 ELSE 0 END) AS up,

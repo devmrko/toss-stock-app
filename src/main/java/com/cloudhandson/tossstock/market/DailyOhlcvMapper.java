@@ -29,4 +29,7 @@ public interface DailyOhlcvMapper {
 
     /** 최신 거래일 상승/전체(전일 종가 대비). {UP, TOTAL}. */
     Map<String, Object> breadth();
+
+    /** 종목의 fromDate 이후 최고가/최저가. {MAXHIGH, MINLOW}. */
+    Map<String, Object> rangeSince(@Param("symbol") String symbol, @Param("fromDate") LocalDate fromDate);
 }
