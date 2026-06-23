@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cloudhandson.tossstock.search.SearchMapper">
+
+    <select id="search" resultType="com.cloudhandson.tossstock.search.SearchHit">
+        SELECT symbol, name, market, sector FROM (
+            SELECT symbol, name, market, sector,
+                   CASE WHEN UPPER(symbol) = UPPER(#{q}) THEN 0
+                        WHEN UPPER(symbol) LIKE UPPER(#{q}) || '%' THEN 1
+                        ELSE 2 END AS ord
+            FROM universe
+            WHERE UPPER(name) LIKE '%' || UPPER(#{q}) || '%'
+               OR UPPER(symbol) LIKE UPPER(#{q}) || '%'
+            UNION ALL
+            SELECT symbol, name, market, NULL AS sector,
+                   CASE WHEN UPPER(symbol) = UPPER(#{q}) THEN 0
+                        WHEN UPPER(symbol) LIKE UPPER(#{q}) || '%' THEN 1
+                        ELSE 2 END AS ord
+            FROM us_universe
+            WHERE UPPER(name) LIKE '%' || UPPER(#{q}) || '%'
+               OR UPPER(symbol) LIKE UPPER(#{q}) || '%'
+        )
+        ORDER BY ord, LENGTH(name)
+        FETCH FIRST #{limit} ROWS ONLY
+    </select>
+
+</mapper>

@@ -63,6 +63,12 @@
     .topnav a{padding:7px 14px;border-radius:8px;text-decoration:none;color:#495057;font-size:14px;font-weight:600;}
     .topnav a:hover{background:#f1f3f5;}
     .topnav a.active{background:#212529;color:#fff;}
+    .search-wrap{position:relative;display:inline-block;}
+    .search-wrap input{width:260px;}
+    .search-dd{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #ced4da;border-radius:8px;margin-top:2px;max-height:280px;overflow:auto;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.12);}
+    .search-dd .it{padding:8px 10px;cursor:pointer;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;}
+    .search-dd .it:hover,.search-dd .it.sel{background:#f1f3f5;}
+    .search-dd .it .mk{color:#868e96;font-size:11px;}
   </style>
 </head>
 <body>
@@ -81,7 +87,7 @@
     <div id="banner" class="banner" style="display:none"></div>
     <div id="breadth" class="breadth" style="display:none"></div>
     <form id="addForm">
-      <input name="symbol" placeholder="종목코드 (예: 005930)" maxlength="20" required/>
+      <span class="search-wrap"><input id="wlSearch" placeholder="종목명/코드 검색 (삼성, apple…)" autocomplete="off" required/><div class="search-dd" style="display:none"></div></span>
       <input name="memo" placeholder="메모 (선택)"/>
       <button type="submit">+ 추가</button>
     </form>
@@ -234,18 +240,60 @@
       }).join('');
     }
 
+    // 종목 검색 자동완성
+    function extractCode(v) {
+      const m = (v || '').match(/\(([A-Za-z0-9.\-]+)\)\s*$/);
+      if (m) return m[1];
+      const t = (v || '').trim();
+      return /^[A-Za-z0-9.\-]{1,12}$/.test(t) ? t : null;
+    }
+    function attachSearch(input, onPick) {
+      const dd = input.parentElement.querySelector('.search-dd');
+      let t = null, items = [], sel = -1;
+      const hide = () => { dd.style.display = 'none'; sel = -1; };
+      input.addEventListener('input', () => {
+        onPick(null);
+        const q = input.value.trim();
+        clearTimeout(t);
+        if (!q) { hide(); return; }
+        t = setTimeout(async () => {
+          try { items = await (await fetch('/api/search?limit=12&q=' + encodeURIComponent(q))).json(); } catch (e) { items = []; }
+          if (!items.length) { hide(); return; }
+          dd.innerHTML = items.map((h, i) => `<div class="it" data-i="${i}"><span><b>${h.name}</b> <span class="mk">${h.symbol}</span></span><span class="mk">${h.market || ''}</span></div>`).join('');
+          dd.style.display = 'block'; sel = -1;
+        }, 220);
+      });
+      dd.addEventListener('mousedown', e => { const it = e.target.closest('.it'); if (it) pick(items[+it.dataset.i]); });
+      input.addEventListener('keydown', e => {
+        if (dd.style.display === 'none') return;
+        const its = [...dd.querySelectorAll('.it')];
+        if (e.key === 'ArrowDown') sel = Math.min(sel + 1, its.length - 1);
+        else if (e.key === 'ArrowUp') sel = Math.max(sel - 1, 0);
+        else if (e.key === 'Enter') { if (sel >= 0) { e.preventDefault(); pick(items[sel]); } return; }
+        else return;
+        e.preventDefault(); its.forEach((x, i) => x.classList.toggle('sel', i === sel)); its[sel] && its[sel].scrollIntoView({ block: 'nearest' });
+      });
+      input.addEventListener('blur', () => setTimeout(hide, 150));
+      function pick(h) { if (!h) return; input.value = h.name + ' (' + h.symbol + ')'; onPick(h.symbol); hide(); }
+    }
+
+    let wlChosen = null;
     document.getElementById('addForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = e.target;
-      const body = { symbol: f.symbol.value.trim(), memo: f.memo.value.trim() || null };
+      const sym = wlChosen || extractCode(document.getElementById('wlSearch').value);
+      if (!sym) { alert('종목을 검색해 선택하세요.'); return; }
       const res = await fetch('/api/watchlist', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: sym, memo: f.memo.value.trim() || null })
       });
       if (res.status === 409) { alert('이미 워치리스트에 있는 종목입니다.'); return; }
       if (!res.ok) { alert('추가 실패 (HTTP ' + res.status + ')'); return; }
-      f.reset(); f.symbol.focus();
+      document.getElementById('wlSearch').value = ''; f.memo.value = ''; wlChosen = null;
+      document.getElementById('wlSearch').focus();
       load();
     });
+    attachSearch(document.getElementById('wlSearch'), s => { wlChosen = s; });
 
     $rows.addEventListener('click', async (e) => {
       const btn = e.target.closest('button.del');

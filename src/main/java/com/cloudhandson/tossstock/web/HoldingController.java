@@ -26,10 +26,13 @@ public class HoldingController {
 
     private final HoldingMapper mapper;
     private final HoldingService service;
+    private final com.cloudhandson.tossstock.market.DailyCollector collector;
 
-    public HoldingController(HoldingMapper mapper, HoldingService service) {
+    public HoldingController(HoldingMapper mapper, HoldingService service,
+                             com.cloudhandson.tossstock.market.DailyCollector collector) {
         this.mapper = mapper;
         this.service = service;
+        this.collector = collector;
     }
 
     @GetMapping
@@ -53,6 +56,8 @@ public class HoldingController {
         h.setStopPct(req.stopPct() != null ? req.stopPct() : 8.0);
         h.setMemo(req.memo());
         mapper.insert(h);
+        // 등록 시 구매일부터 현재까지 일봉 백필(지표·고점/MDD 채움)
+        collector.backfillSymbol(h.getSymbol(), h.getBuyAt().toLocalDate());
         return ResponseEntity.status(HttpStatus.CREATED).body(h);
     }
 

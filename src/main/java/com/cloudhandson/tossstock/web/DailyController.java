@@ -52,4 +52,14 @@ public class DailyController {
         collector.refreshLatest();
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(status());
     }
+
+    /** 단일 종목 일봉 백필(from 이후 현재까지). 등록 시/수동. */
+    @PostMapping("/backfill-symbol")
+    public ResponseEntity<Map<String, Object>> backfillSymbol(
+            @org.springframework.web.bind.annotation.RequestParam String symbol,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String from) {
+        java.time.LocalDate f = (from != null && !from.isBlank()) ? java.time.LocalDate.parse(from) : null;
+        collector.backfillSymbol(symbol.trim(), f);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("symbol", symbol, "from", from == null ? "" : from));
+    }
 }

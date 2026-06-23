@@ -24,10 +24,13 @@ public class WatchlistController {
 
     private final WatchlistMapper mapper;
     private final WatchlistQuoteService quoteService;
+    private final com.cloudhandson.tossstock.market.DailyCollector collector;
 
-    public WatchlistController(WatchlistMapper mapper, WatchlistQuoteService quoteService) {
+    public WatchlistController(WatchlistMapper mapper, WatchlistQuoteService quoteService,
+                              com.cloudhandson.tossstock.market.DailyCollector collector) {
         this.mapper = mapper;
         this.quoteService = quoteService;
+        this.collector = collector;
     }
 
     /** 원본 행(스모크/디버그용). */
@@ -55,6 +58,8 @@ public class WatchlistController {
         w.setSymbol(symbol);
         w.setMemo(req.memo());
         mapper.insert(w);
+        // 등록 시 최근 일봉 백필(지표 즉시 표시)
+        collector.backfillSymbol(symbol, null);
         return ResponseEntity.status(HttpStatus.CREATED).body(w);
     }
 

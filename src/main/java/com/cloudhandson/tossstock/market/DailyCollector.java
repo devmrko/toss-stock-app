@@ -94,6 +94,41 @@ public class DailyCollector {
                 u -> retry(() -> olderCandles(u.getSymbol(), before, target), u.getSymbol()));
     }
 
+    /**
+     * 단일 종목 일봉을 from(구매일/등록일) 이후 현재까지 백필. KR/US 공용.
+     * 등록 시 호출 → 그 종목의 지표·보유 고점/MDD 즉시 채움.
+     */
+    @Async
+    public void backfillSymbol(String symbol, LocalDate from) {
+        LocalDate cutoff = from != null ? from : LocalDate.now().minusDays(60);
+        List<TossCandle> all = new ArrayList<>();
+        String before = null;
+        for (int page = 0; page < 6; page++) {   // 최대 ~1200거래일
+            CandlePage p = retryPage(symbol, before);
+            if (p == null || p.candles().isEmpty()) {
+                break;
+            }
+            all.addAll(p.candles());
+            LocalDate oldest = tradeDate(p.candles().get(p.candles().size() - 1));
+            if (oldest == null || !oldest.isAfter(cutoff) || p.nextBefore() == null || p.nextBefore().isBlank()) {
+                break;
+            }
+            before = p.nextBefore();
+        }
+        int n = 0;
+        for (TossCandle c : all) {
+            LocalDate d = tradeDate(c);
+            if (d != null && !d.isBefore(cutoff)) {
+                DailyOhlcv row = toDaily(symbol, c);
+                if (row != null) {
+                    dailyMapper.upsert(row);
+                    n++;
+                }
+            }
+        }
+        log.info("종목 일봉 백필 {}: {} ~ 현재, {}건", symbol, cutoff, n);
+    }
+
     /** boundary 이전 chunkDays 개 일봉 중 target 이후만. */
     private List<TossCandle> olderCandles(String symbol, String before, LocalDate target) {
         CandlePage p = toss.getDailyCandlePage(symbol, chunkDays, before);
