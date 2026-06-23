@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>뉴스 · S1–S5 (시장/섹터/종목)</title>
+  <style>
+    :root { --up:#e03131; --down:#1971c2; --line:#e9ecef; --muted:#868e96; }
+    * { box-sizing:border-box; }
+    body { font-family:-apple-system,"Apple SD Gothic Neo",Pretendard,sans-serif; margin:0; background:#f8f9fa; color:#212529; }
+    header { padding:18px 24px; background:#fff; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+    h1 { font-size:20px; margin:0; }
+    .sub { color:var(--muted); font-size:13px; }
+    .wrap { max-width:900px; margin:0 auto; padding:18px 24px; }
+    .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .filters button { padding:7px 13px; border:1px solid #ced4da; border-radius:18px; background:#fff; font-size:13px; cursor:pointer; }
+    .filters button.on { background:#212529; color:#fff; border-color:#212529; }
+    .card { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+    .top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+    .badge { font-size:12px; font-weight:700; padding:2px 8px; border-radius:10px; }
+    .b-up { background:#ffe3e3; color:var(--up); } .b-down { background:#e7f5ff; color:var(--down); } .b-flat { background:#f1f3f5; color:var(--muted); }
+    .title { font-weight:600; font-size:15px; line-height:1.35; }
+    .title a { color:inherit; text-decoration:none; }
+    .meta { color:var(--muted); font-size:12px; margin-top:5px; }
+    .kind { font-size:11px; padding:1px 6px; border-radius:4px; background:#f1f3f5; color:#495057; }
+    .analysis { font-size:13px; color:#343a40; margin-top:7px; line-height:1.5; }
+    .empty { text-align:center; color:var(--muted); padding:50px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📰 뉴스 S1–S5</h1>
+    <span class="sub">시장 / 섹터 / 종목 · 호재🟢 악재🔴 · 10분 주기</span>
+    <span class="sub" id="updated" style="margin-left:auto"></span>
+  </header>
+  <div class="wrap">
+    <div class="filters" id="filters">
+      <button data-f="all" class="on">전체</button>
+      <button data-f="bull">호재(S4·S5)</button>
+      <button data-f="bear">악재(S1·S2)</button>
+      <button data-f="MARKET">시장</button>
+      <button data-f="sector">섹터</button>
+      <button data-f="symbol">종목</button>
+    </div>
+    <div id="list"><div class="empty">불러오는 중…</div></div>
+  </div>
+
+  <script>
+    const SECTORS = new Set("반도체,2차전지,디스플레이,바이오,의료기기,화장품,엔터,미디어,게임,자동차,조선,방산,건설,철강금속,식음료,화학,에너지,통신,금융,유통소비재,운송,IT/인터넷,전자부품".split(","));
+    const $list = document.getElementById('list'), $updated = document.getElementById('updated');
+    let all = [], filter = 'all';
+
+    function parseSent(s) { // "005930:S5,반도체:S3" -> [{key,level}]
+      if (!s) return [];
+      return s.split(',').map(p => { const [key, level] = p.split(':'); return { key, level }; });
+    }
+    function dir(level) { return (level==='S1'||level==='S2') ? 'down' : (level==='S4'||level==='S5') ? 'up' : 'flat'; }
+    function emoji(level) { return dir(level)==='down' ? '🔴' : dir(level)==='up' ? '🟢' : '⚪'; }
+    function label(level) { return {S1:'강한악재',S2:'약한악재',S3:'중립',S4:'약한호재',S5:'강한호재'}[level]||level; }
+
+    function matches(n) {
+      const tags = parseSent(n.sentiment);
+      if (filter==='all') return true;
+      if (filter==='bull') return tags.some(t => t.level==='S4'||t.level==='S5');
+      if (filter==='bear') return tags.some(t => t.level==='S1'||t.level==='S2');
+      if (filter==='MARKET') return tags.some(t => t.key==='MARKET');
+      if (filter==='sector') return tags.some(t => SECTORS.has(t.key));
+      if (filter==='symbol') return tags.some(t => /^\d{6}$/.test(t.key));
+      return true;
+    }
+
+    function render() {
+      const rows = all.filter(matches);
+      if (!rows.length) { $list.innerHTML = '<div class="empty">표시할 뉴스가 없어요. 잠시 후 자동 수집됩니다.</div>'; return; }
+      $list.innerHTML = rows.map(n => {
+        const tags = parseSent(n.sentiment).filter(t => t.level!=='S3').map(t =>
+          `<span class="badge b-${dir(t.level)}">${emoji(t.level)} ${t.key} ${label(t.level)}</span>`).join('');
+        const when = n.publishedAt ? new Date(n.publishedAt).toLocaleString('ko-KR') : '';
+        const title = n.url ? `<a href="${n.url}" target="_blank">${n.title}</a>` : n.title;
+        return `<div class="card">
+          <div class="top">${tags || '<span class="badge b-flat">중립</span>'}<span class="kind">${n.kind||''}</span></div>
+          <div class="title">${title}</div>
+          <div class="meta">${n.source||''} · ${when}</div>
+          ${n.rationale ? `<div class="analysis">${n.rationale}</div>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    async function load() {
+      try {
+        all = await (await fetch('/api/news?limit=150')).json();
+        $updated.textContent = '갱신 ' + new Date().toLocaleTimeString('ko-KR');
+        render();
+      } catch (e) { $updated.textContent = '조회 실패'; }
+    }
+
+    document.getElementById('filters').addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      document.querySelectorAll('#filters button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on'); filter = b.dataset.f; render();
+    });
+
+    load();
+    setInterval(load, 30000);
+  </script>
+</body>
+</html>

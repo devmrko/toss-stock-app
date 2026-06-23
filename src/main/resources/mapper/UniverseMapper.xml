@@ -19,6 +19,10 @@
         UPDATE universe SET sector = #{sector} WHERE symbol = #{symbol}
     </update>
 
+    <select id="findCodeByName" parameterType="string" resultType="string">
+        SELECT symbol FROM universe WHERE name = #{name} FETCH FIRST 1 ROWS ONLY
+    </select>
+
     <insert id="insert" parameterType="com.cloudhandson.tossstock.market.Universe">
         INSERT INTO universe (symbol, name, market, ksic, product)
         VALUES (#{symbol}, #{name}, #{market}, #{ksic}, #{product})

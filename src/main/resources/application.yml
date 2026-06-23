@@ -31,6 +31,15 @@ toss:
   client-key: ${TOSS_CLIENT_KEY:}
   secret-key: ${TOSS_SECRET_KEY:}
 
+# 뉴스 S1-S5 분류 (#425)
+news:
+  feeds: ${NEWS_RSS_FEEDS:https://www.hankyung.com/feed/finance,https://www.yna.co.kr/rss/economy.xml}
+  openrouter-key: ${OPENROUTER_API_KEY:}
+  openrouter-model: ${OPENROUTER_MODEL:anthropic/claude-haiku-4.5}
+  openrouter-url: ${OPENROUTER_URL:https://openrouter.ai/api/v1/chat/completions}
+  interval-ms: ${NEWS_INTERVAL_MS:600000}
+  max-per-run: ${NEWS_MAX_PER_RUN:40}
+
 logging:
   level:
     com.cloudhandson.tossstock: INFO

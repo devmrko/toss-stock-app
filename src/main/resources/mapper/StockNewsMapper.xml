@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cloudhandson.tossstock.news.StockNewsMapper">
+
+    <select id="existsByExtId" resultType="boolean">
+        SELECT CASE WHEN EXISTS (SELECT 1 FROM stock_news WHERE ext_id = #{extId}) THEN 1 ELSE 0 END
+        FROM dual
+    </select>
+
+    <insert id="insertReceived" parameterType="com.cloudhandson.tossstock.news.StockNews"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
+        INSERT INTO stock_news (ext_id, title, url, source, published_at, status)
+        VALUES (#{extId}, #{title}, #{url}, #{source}, #{publishedAt}, 'RECEIVED')
+    </insert>
+
+    <update id="updateAnalyzed">
+        UPDATE stock_news SET
+            status = 'ANALYZED', targets = #{targets}, sentiment = #{sentiment},
+            rationale = #{rationale}, kind = #{kind}, model = #{model}, expires_at = #{expiresAt}
+        WHERE id = #{id}
+    </update>
+
+    <resultMap id="newsMap" type="com.cloudhandson.tossstock.news.StockNews">
+        <id property="id" column="ID"/>
+        <result property="extId" column="EXT_ID"/>
+        <result property="title" column="TITLE"/>
+        <result property="url" column="URL"/>
+        <result property="source" column="SOURCE"/>
+        <result property="publishedAt" column="PUBLISHED_AT"/>
+        <result property="fetchedAt" column="FETCHED_AT"/>
+        <result property="status" column="STATUS"/>
+        <result property="targets" column="TARGETS"/>
+        <result property="sentiment" column="SENTIMENT"/>
+        <result property="rationale" column="RATIONALE"/>
+        <result property="kind" column="KIND"/>
+        <result property="model" column="MODEL"/>
+        <result property="expiresAt" column="EXPIRES_AT"/>
+    </resultMap>
+
+    <select id="findReceived" resultMap="newsMap">
+        SELECT id, ext_id, title, url, source, published_at, fetched_at, status
+        FROM stock_news
+        WHERE status = 'RECEIVED'
+        ORDER BY fetched_at DESC
+        FETCH FIRST #{limit} ROWS ONLY
+    </select>
+
+    <select id="active" resultMap="newsMap">
+        SELECT id, ext_id, title, url, source, published_at, fetched_at, status,
+               targets, sentiment, rationale, kind, model, expires_at
+        FROM stock_news
+        WHERE status = 'ANALYZED'
+          AND expires_at &gt; SYSTIMESTAMP
+        <if test="key != null">
+          AND ',' || targets || ',' LIKE '%,' || #{key} || ',%'
+        </if>
+        ORDER BY COALESCE(published_at, fetched_at) DESC
+        FETCH FIRST #{limit} ROWS ONLY
+    </select>
+
+    <update id="expireOld">
+        UPDATE stock_news SET status = 'EXPIRED'
+        WHERE status = 'ANALYZED' AND expires_at &lt;= SYSTIMESTAMP
+    </update>
+
+</mapper>
