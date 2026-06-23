@@ -31,9 +31,20 @@
     tr.danger td { background:#fff5f5; }
     .stopbadge{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;background:#ffe3e3;color:#e03131;margin-left:6px;}
     .empty{text-align:center;color:var(--muted);padding:40px;}
+  
+    .topnav{display:flex;gap:4px;padding:8px 24px;background:#fff;border-bottom:1px solid #e9ecef;flex-wrap:wrap;position:sticky;top:0;z-index:40;}
+    .topnav a{padding:7px 14px;border-radius:8px;text-decoration:none;color:#495057;font-size:14px;font-weight:600;}
+    .topnav a:hover{background:#f1f3f5;}
+    .topnav a.active{background:#212529;color:#fff;}
   </style>
 </head>
 <body>
+  <nav class="topnav">
+    <a href="/top50.html">🔥 탑50</a>
+    <a href="/watchlist.html">📈 워치리스트</a>
+    <a href="/news.html">📰 뉴스</a>
+    <a href="/holdings.html" class="active">💼 내 보유</a>
+  </nav>
   <header>
     <h1>💼 내 보유</h1>
     <span class="sub">수동 입력 · 수익률 / 하드스탑 · 10초 갱신</span>

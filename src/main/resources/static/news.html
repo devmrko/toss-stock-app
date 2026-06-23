@@ -25,9 +25,20 @@
     .kind { font-size:11px; padding:1px 6px; border-radius:4px; background:#f1f3f5; color:#495057; }
     .analysis { font-size:13px; color:#343a40; margin-top:7px; line-height:1.5; }
     .empty { text-align:center; color:var(--muted); padding:50px; }
+  
+    .topnav{display:flex;gap:4px;padding:8px 24px;background:#fff;border-bottom:1px solid #e9ecef;flex-wrap:wrap;position:sticky;top:0;z-index:40;}
+    .topnav a{padding:7px 14px;border-radius:8px;text-decoration:none;color:#495057;font-size:14px;font-weight:600;}
+    .topnav a:hover{background:#f1f3f5;}
+    .topnav a.active{background:#212529;color:#fff;}
   </style>
 </head>
 <body>
+  <nav class="topnav">
+    <a href="/top50.html">🔥 탑50</a>
+    <a href="/watchlist.html">📈 워치리스트</a>
+    <a href="/news.html" class="active">📰 뉴스</a>
+    <a href="/holdings.html">💼 내 보유</a>
+  </nav>
   <header>
     <h1>📰 뉴스 S1–S5</h1>
     <span class="sub">시장 / 섹터 / 종목 · 호재🟢 악재🔴 · 10분 주기</span>
