@@ -74,6 +74,17 @@ public class HoldingController {
         return ResponseEntity.noContent().build();
     }
 
+    /** 종목 손절% 수정(그 종목 전 거래 일괄). */
+    @org.springframework.web.bind.annotation.PutMapping("/stop")
+    public ResponseEntity<Void> updateStop(@org.springframework.web.bind.annotation.RequestParam String symbol,
+                                           @org.springframework.web.bind.annotation.RequestParam Double stopPct) {
+        if (symbol == null || symbol.isBlank() || stopPct == null || stopPct < 0 || stopPct > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "symbol·stopPct(0~100) 필수");
+        }
+        mapper.updateStopPctBySymbol(symbol.trim(), stopPct);
+        return ResponseEntity.noContent().build();
+    }
+
     public record AddRequest(String symbol, String side, LocalDateTime buyAt, BigDecimal buyPrice,
                              Long quantity, Double stopPct, String memo) {
     }

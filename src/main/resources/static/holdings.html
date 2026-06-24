@@ -47,6 +47,8 @@
     .sidetag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;}
     .sidetag.BUY{background:#ffe3e3;color:#e03131;} .sidetag.SELL{background:#e7f1ff;color:#1971c2;}
     .qzero{color:#adb5bd;}
+    .stoped{cursor:pointer;color:#868e96;font-size:11px;text-decoration:underline dotted;}
+    .stoped:hover{color:var(--up);}
     .news-badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:6px;}
     .news-badge.nb-up{background:#ffe3e3;color:#e03131;} .news-badge.nb-down{background:#e7f5ff;color:#1971c2;}
     .filterbar{display:flex;gap:12px;align-items:center;margin-bottom:10px;font-size:13px;color:var(--muted);}
@@ -128,7 +130,7 @@
     <table>
       <thead>
         <tr>
-          <th>종목</th><th title="순보유=Σ매수−Σ매도">순수량<span class="hb">매수−매도</span></th><th title="매수 가중평균 단가">평단가<span class="hb">매수가중</span></th><th>현재가</th><th title="전일 종가 대비 등락">1일<span class="hb">전일대비</span></th><th title="7일 전 종가 대비 등락">7일<span class="hb">7일전</span></th><th title="(현재−평단)/평단">수익률<span class="hb">vs평단</span></th>
+          <th>종목</th><th title="순보유=Σ매수−Σ매도">순수량<span class="hb">매수−매도</span></th><th title="매수 가중평균 단가">평단가<span class="hb">매수가중</span></th><th title="순수량×평단(매입원가)">투자금액<span class="hb">매입원가</span></th><th>현재가</th><th title="전일 종가 대비 등락">1일<span class="hb">전일대비</span></th><th title="7일 전 종가 대비 등락">7일<span class="hb">7일전</span></th><th title="(현재−평단)/평단">수익률<span class="hb">vs평단</span></th>
           <th title="순수량×(현재−평단)">평가손익<span class="hb">미실현</span></th><th title="Σ매도수량×(매도가−평단)">실현손익<span class="hb">매도실현</span></th><th title="최초 매수일 이후 경과">보유일<span class="hb">최초매수후</span></th>
           <th title="평단×(1−손절%)">스탑가<span class="hb">평단·-N%</span></th><th title="현재가 대비 스탑까지 여유">스탑까지<span class="hb">vs현재가</span></th>
           <th title="최초 매수일 이후 최고가">매수후고점<span class="hb">최초매수후</span></th><th title="고점 대비 현재 낙폭(MDD)">고점대비<span class="hb">낙폭</span></th><th></th>
@@ -180,20 +182,22 @@
       const showClosed = document.getElementById('showClosed').checked;
       const rows = showClosed ? lastRows : lastRows.filter(h => h.netQty !== 0);
       if (!lastRows.length) {
-        $rows.innerHTML = '<tr><td class="empty" colspan="15">보유 종목이 없어요. 위에서 매수 거래를 추가하세요.</td></tr>';
+        $rows.innerHTML = '<tr><td class="empty" colspan="16">보유 종목이 없어요. 위에서 매수 거래를 추가하세요.</td></tr>';
         $sum.style.display = 'none';
         return;
       }
       if (!rows.length) {
-        $rows.innerHTML = '<tr><td class="empty" colspan="15">표시할 종목이 없어요. ‘청산 종목 표시’를 켜보세요.</td></tr>';
+        $rows.innerHTML = '<tr><td class="empty" colspan="16">표시할 종목이 없어요. ‘청산 종목 표시’를 켜보세요.</td></tr>';
         $sum.style.display = 'none';
         return;
       }
-      let totU = 0, hasU = false, totR = 0, hasR = false, retSum = 0, retCnt = 0;
+      let totU = 0, hasU = false, totR = 0, hasR = false, retSum = 0, retCnt = 0, totInv = 0, hasInv = false;
       $rows.innerHTML = rows.map(h => {
         if (h.unrealizedAmount != null) { totU += h.unrealizedAmount; hasU = true; }
         if (h.realizedAmount != null) { totR += h.realizedAmount; hasR = true; }
         if (h.unrealizedPct != null) { retSum += h.unrealizedPct; retCnt++; }
+        const inv = (h.netQty != null && h.netQty > 0 && h.avgCost != null) ? Math.round(h.netQty * h.avgCost) : null;
+        if (inv != null) { totInv += inv; hasInv = true; }
         const danger = h.belowStop;
         const stopHit = h.stopHitSinceBuy && !h.belowStop;
         const open = expanded.has(h.symbol);
@@ -203,6 +207,7 @@
           <td><span class="name">${h.name ?? '-'}</span><span class="code">${h.symbol}</span>${h.sector ? `<span class="sector">${h.sector}</span>` : ''}${newsBadge(h.symbol, h.sector)}${danger ? '<span class="stopbadge">🔴 손절</span>' : ''}</td>
           <td class="num">${qty}</td>
           <td class="num">${n(h.avgCost, 2)}</td>
+          <td class="num">${inv == null ? '<span class="dimv">-</span>' : n(inv)}</td>
           <td class="num">${n(h.currentPrice)}</td>
           <td class="num">${pct(h.change1dPct)}</td>
           <td class="num">${pct(h.change7dPct)}</td>
@@ -210,13 +215,13 @@
           <td class="num ${cls(h.unrealizedAmount)}">${h.unrealizedAmount == null ? '<span class="dimv">-</span>' : sign(h.unrealizedAmount) + n(h.unrealizedAmount)}</td>
           <td class="num ${cls(h.realizedAmount)}">${h.realizedAmount == null ? '<span class="dimv">-</span>' : sign(h.realizedAmount) + n(h.realizedAmount)}</td>
           <td class="num">${h.daysHeld == null ? '-' : h.daysHeld + '일'}</td>
-          <td class="num">${n(h.stopPrice, 2)} <span class="dimv" style="font-size:11px">-${h.stopPct}%</span></td>
+          <td class="num">${n(h.stopPrice, 2)} <span class="stoped" data-sym="${h.symbol}" data-pct="${h.stopPct}" title="클릭해 손절% 수정">-${h.stopPct}%</span></td>
           <td class="num">${h.stopDistPct == null ? '<span class="dimv">-</span>' : `<span class="${h.stopDistPct < 0 ? 'up' : 'down'}">${h.stopDistPct > 0 ? '+' : ''}${h.stopDistPct.toFixed(1)}%</span>`}${stopHit ? ' <span title="보유 중 스탑가를 터치한 적 있음" class="dimv">⚠터치</span>' : ''}</td>
           <td class="num">${n(h.peakSinceBuy)}</td>
           <td class="num">${h.ddFromPeak == null ? '<span class="dimv">-</span>' : `<span class="down">-${h.ddFromPeak.toFixed(2)}%</span>`}</td>
           <td class="actcell"><button class="bf" data-sym="${h.symbol}" data-from="${h.firstBuyAt ? h.firstBuyAt.slice(0, 10) : ''}" title="일봉 백필">↻</button><button class="exp" data-sym="${h.symbol}" title="거래내역">${open ? '▾' : '▸'}${h.trades.length}</button></td>
         </tr>`;
-        const sub = open ? `<tr class="trades"><td colspan="15"><table class="tradetbl">${h.trades.map(t => `
+        const sub = open ? `<tr class="trades"><td colspan="16"><table class="tradetbl">${h.trades.map(t => `
           <tr><td style="text-align:left"><span class="sidetag ${t.side}">${t.side === 'SELL' ? '매도' : '매수'}</span></td>
           <td class="num">${when(t.tradedAt)}</td>
           <td class="num">${n(t.price, 2)}</td>
@@ -227,7 +232,8 @@
       }).join('');
       $sum.style.display = 'block';
       const avg = retCnt ? (retSum / retCnt) : null;
-      $sum.innerHTML = `📊 보유 <b>${rows.length}</b>종목 · 평균 수익률 ${pct(avg)}`
+      $sum.innerHTML = `📊 보유 <b>${rows.length}</b>종목 · 총 투자금액 ${hasInv ? `<b>${n(totInv)}원</b>` : '<span class="dimv">-</span>'}`
+        + ` · 평균 수익률 ${pct(avg)}`
         + ` · 평가손익 ${hasU ? `<b class="${cls(totU)}">${sign(totU)}${n(totU)}원</b>` : '<span class="dimv">-</span>'}`
         + ` · 실현손익 ${hasR ? `<b class="${cls(totR)}">${sign(totR)}${n(totR)}원</b>` : '<span class="dimv">-</span>'}`;
     }
@@ -306,6 +312,17 @@
       if (del) {
         if (!confirm('이 거래를 삭제할까요?')) return;
         await fetch('/api/holdings/' + del.dataset.id, { method: 'DELETE' });
+        load(); return;
+      }
+      const st = e.target.closest('.stoped');
+      if (st) {
+        const cur = st.dataset.pct;
+        const v = prompt(`손절 % (현재 ${cur}%)`, cur);
+        if (v == null) return;
+        const pctVal = parseFloat(v);
+        if (isNaN(pctVal) || pctVal < 0 || pctVal > 100) { alert('0~100 사이 숫자를 입력하세요.'); return; }
+        const res = await fetch('/api/holdings/stop?symbol=' + encodeURIComponent(st.dataset.sym) + '&stopPct=' + pctVal, { method: 'PUT' });
+        if (!res.ok) { alert('수정 실패 (HTTP ' + res.status + ')'); return; }
         load(); return;
       }
       const exp = e.target.closest('button.exp');

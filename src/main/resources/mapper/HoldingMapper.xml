@@ -19,4 +19,8 @@
         DELETE FROM holding WHERE id = #{id}
     </delete>
 
+    <update id="updateStopPctBySymbol">
+        UPDATE holding SET stop_pct = #{stopPct} WHERE symbol = #{symbol}
+    </update>
+
 </mapper>
