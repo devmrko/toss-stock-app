@@ -6,7 +6,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "briefing")
 public record BriefingProperties(
         String webhookUrl,
-        double takeProfitPct,   // 익절 목표 %(전역 기본)
         int watchlistLimit,
         String openCron,
         String closeCron) {

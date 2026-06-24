@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-/** 보유+워치리스트 → Discord 마크다운 브리핑(순수). 2000자 제한 대응. */
+/** 보유+관련뉴스+워치리스트 → Discord 마크다운 브리핑(순수). 2000자 제한 대응. */
 public final class BriefingFormatter {
 
     private static final int MAX = 1900;
@@ -20,7 +20,7 @@ public final class BriefingFormatter {
     }
 
     public static String build(String label, LocalDateTime now, List<PositionView> positions,
-                               List<WatchlistQuote> watchlist, double takePct, int wlLimit) {
+                               List<HoldingNews> holdingNews, List<WatchlistQuote> watchlist, int wlLimit) {
         StringBuilder sb = new StringBuilder();
         sb.append("📊 **").append(label).append(" 브리핑** · ")
                 .append(now.format(DT)).append(" (").append(DOW[now.getDayOfWeek().getValue() - 1]).append(")\n");
@@ -49,12 +49,26 @@ public final class BriefingFormatter {
                     .append(p.netQty() == null ? "?" : num(p.netQty())).append("주 · 평단 ")
                     .append(num(p.avgCost())).append(" → ").append(num(p.currentPrice()))
                     .append(' ').append(pct(p.unrealizedPct())).append('\n');
-            BigDecimal tp = p.avgCost() == null ? null
-                    : p.avgCost().multiply(BigDecimal.valueOf(1 + takePct / 100.0));
-            sb.append("   🎯익절 ").append(num(tp)).append(" (+").append(trim(takePct)).append("%)")
-                    .append(" / 🛑손절 ").append(num(p.stopPrice()))
-                    .append(" (-").append(trim(p.stopPct() == null ? 0 : p.stopPct())).append("%)")
-                    .append(p.belowStop() ? "  ⚠️손절이탈" : "").append('\n');
+            // 조정 손절가 = max(평단, 매수후고점) × (1 − 손절%) — 고점 따라 올라가는 트레일링
+            double stopPct = p.stopPct() == null ? 0 : p.stopPct();
+            BigDecimal adj = adjustedStop(p.avgCost(), p.peakSinceBuy(), p.stopPrice(), stopPct);
+            boolean breached = p.currentPrice() != null && adj != null && p.currentPrice().compareTo(adj) <= 0;
+            sb.append("   🛑 조정 손절가 ").append(num(adj))
+                    .append(" (고점 기준 -").append(trim(stopPct)).append("%)")
+                    .append(breached ? "  ⚠️이탈" : "").append('\n');
+        }
+
+        // 보유 관련 뉴스
+        if (holdingNews != null && !holdingNews.isEmpty()) {
+            sb.append("\n📰 **보유 관련 뉴스**\n");
+            for (HoldingNews hn : holdingNews) {
+                String line = "• " + sIcon(hn.level()) + " " + hn.level() + " **" + hn.name() + "** — "
+                        + clip(hn.title(), 60) + "\n";
+                if (sb.length() + line.length() > MAX) {
+                    break;
+                }
+                sb.append(line);
+            }
         }
 
         // 워치리스트(거래량순 top N)
@@ -85,6 +99,20 @@ public final class BriefingFormatter {
         return out.length() > MAX ? out.substring(0, MAX) + "…" : out;
     }
 
+    /** 조정 손절가: max(평단, 고점)×(1−손절%). 고점 없으면 기존 손절가. */
+    private static BigDecimal adjustedStop(BigDecimal avgCost, BigDecimal peak, BigDecimal baseStop, double stopPct) {
+        if (avgCost == null) {
+            return baseStop;
+        }
+        BigDecimal hi = (peak != null && peak.compareTo(avgCost) > 0) ? peak : avgCost;
+        return hi.multiply(BigDecimal.valueOf(1 - stopPct / 100.0)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static String sIcon(String level) {
+        return ("S1".equals(level) || "S2".equals(level)) ? "🔴"
+                : ("S4".equals(level) || "S5".equals(level)) ? "🟢" : "⚪";
+    }
+
     private static String num(BigDecimal v) {
         return v == null ? "-" : String.format("%,d", v.setScale(0, RoundingMode.HALF_UP).longValue());
     }
@@ -99,6 +127,13 @@ public final class BriefingFormatter {
 
     private static String pct(Double v) {
         return v == null ? "-" : String.format("**%s%.2f%%**", v > 0 ? "+" : "", v);
+    }
+
+    private static String clip(String s, int n) {
+        if (s == null) {
+            return "";
+        }
+        return s.length() > n ? s.substring(0, n) + "…" : s;
     }
 
     /** 정수면 정수로, 아니면 소수 1자리. (8.0 → "8", 7.5 → "7.5") */
