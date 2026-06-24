@@ -1,7 +1,7 @@
 # 설계서: 보유 거래원장(매수/매도·평균단가 집계) (#433)
 
 > **상태**: Approved · **작성**: [AI] Architect · 2026-06-24
-> **추적성** — Redmine: #433 · 기반: #430(보유)·#419(일봉)·시세(prices) · 구현: `holding/*`, `web/HoldingController.java`, `static/holdings.html`, `db/holding.sql`
+> **추적성** — Redmine: #433 · 기반: #430(보유)·#419(일봉)·#426(뉴스 S뱃지)·#429(시세 지표)·시세(prices) · 구현: `holding/*`, `web/HoldingController.java`, `static/holdings.html`, `db/holding.sql`, `static/{top50,watchlist}.html`(헤더 기준)
 > · 테스트: `PositionCalcTest`
 
 ## 1. 목적
@@ -91,3 +91,26 @@ daysHeld   = floor(now − firstBuyAt, days)
 ## 10. Open Questions
 - (보류) 순수량 음수(과매도) 경고 UI — 이번엔 표시만.
 - (보류) stopPct 를 포지션 단위 별도 설정으로 분리할지 — 현재는 최근 BUY 값 사용.
+
+## 11. 후속 보강 (同 이슈)
+초기 구현 후 사용성 보강을 같은 이슈로 추가.
+
+### 11.1 1일/7일 등락 (보유)
+- `PositionView.change1dPct/change7dPct` 추가. `HoldingService` 가 `dailyMapper.recentForSymbols(symbols, today−20d)`(전 종목 1쿼리)로 최근 종가를 모아 `changePct()` 계산.
+  - 1일 = 직전 거래일 종가 대비, 7일 = `lastDate−7일(달력)` 이하 최신 종가 대비(부족 시 가장 오래된 종가).
+- `PositionCalc.of(...)` 시그니처에 두 값 추가(통과만). 테스트 호출부 갱신.
+
+### 11.2 뉴스 S뱃지 (보유)
+- 백엔드 변경 없음 — 탑50/워치리스트와 동일 `/api/news/signals`(symbol/sector→S레벨) 재사용. `holdings.html` 에 `newsBadge()` 이식, 종목 셀에 표시.
+
+### 11.3 청산 필터 (보유)
+- `netQty===0`(전량 청산) 종목을 **기본 숨김**. "청산 종목 표시" 체크박스로 토글(재조회 없이 `render()` 재실행). 합계도 보이는 행 기준.
+
+### 11.4 헤더 기준 표기 (전 화면)
+- `top50/watchlist/holdings` 헤더에 산정 기준을 보조라벨(`.hb`)로 표기. 값은 #429 상수와 일치: 흐름 `최근20일`, 추세 `30일선`(MA30), 딥 `20일고점`, 스윙 `20일`, 등락률 `전일대비`, 거래량·거래대금 `당일`; 보유는 평단/최초매수일 기준 표기.
+
+### 11.5 인수조건(추가)
+- [ ] 보유 행에 1일·7일 등락%(현재가 아닌 일봉 종가 기준), 데이터 부족 시 '-'.
+- [ ] 보유 종목/섹터 뉴스 S뱃지(S3 제외) 표시.
+- [ ] 청산 종목 기본 숨김 + 토글로 표시.
+- [ ] 모든 시세/보유 헤더에 기준(기간) 보조라벨.

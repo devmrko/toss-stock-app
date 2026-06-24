@@ -12,6 +12,8 @@ public record PositionView(
         Long netQty,               // 순보유 수량(Σ매수−Σ매도). 폴백 시 null
         BigDecimal avgCost,        // 평균 매수단가
         BigDecimal currentPrice,
+        Double change1dPct,        // 1일 등락(전일 종가 대비)
+        Double change7dPct,        // 7일 등락(7일 전 종가 대비)
         Double unrealizedPct,      // (현재−평단)/평단 %
         Long unrealizedAmount,     // 순수량×(현재−평단)
         Long realizedAmount,       // Σ매도수량×(매도가−평단)

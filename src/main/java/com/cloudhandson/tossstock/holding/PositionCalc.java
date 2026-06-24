@@ -21,6 +21,7 @@ public final class PositionCalc {
 
     public static PositionView of(String symbol, String name, String sector,
                                   List<Holding> trades, BigDecimal current,
+                                  Double change1dPct, Double change7dPct,
                                   BigDecimal peak, BigDecimal trough, LocalDateTime now) {
         List<Holding> sorted = trades.stream()
                 .sorted(Comparator.comparing(Holding::getBuyAt, Comparator.nullsLast(Comparator.naturalOrder())))
@@ -116,7 +117,7 @@ public final class PositionCalc {
                 .toList();
 
         return new PositionView(symbol, name, sector, netQty, avgCost, current,
-                unrealizedPct, unrealizedAmount, realizedAmount, daysHeld,
+                change1dPct, change7dPct, unrealizedPct, unrealizedAmount, realizedAmount, daysHeld,
                 stopPct, stopPrice, stopDistPct, belowStop, peak, ddFromPeak, stopHit, firstBuyAt, tv);
     }
 

@@ -30,7 +30,7 @@ class PositionCalcTest {
     }
 
     private static PositionView calc(List<Holding> trades, BigDecimal current) {
-        return PositionCalc.of("005930", "삼성전자", "반도체", trades, current, null, null, NOW);
+        return PositionCalc.of("005930", "삼성전자", "반도체", trades, current, null, null, null, null, NOW);
     }
 
     @Test
@@ -80,7 +80,7 @@ class PositionCalcTest {
     @Test
     void stop_and_mdd() {
         PositionView p = PositionCalc.of("005930", "삼성전자", "반도체",
-                List.of(t("BUY", 100, 10L, 5, 10.0)), bd(85), bd(130), bd(88), NOW);
+                List.of(t("BUY", 100, 10L, 5, 10.0)), bd(85), null, null, bd(130), bd(88), NOW);
         assertThat(p.stopPrice()).isEqualByComparingTo(bd(90));  // 100×(1−0.10)
         assertThat(p.belowStop()).isTrue();                      // 85 ≤ 90
         assertThat(p.stopHitSinceBuy()).isTrue();                // 저가 88 ≤ 90

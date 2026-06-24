@@ -22,6 +22,7 @@
     th { background:#f1f3f5; color:#495057; font-weight:600; font-size:12px; }
     th.sortable{cursor:pointer;user-select:none;} th.sortable:hover{color:#212529;}
     th .arr{font-size:10px;margin-left:3px;color:#868e96;}
+    th .hb{display:block;font-weight:400;color:#adb5bd;font-size:10px;margin-top:1px;letter-spacing:-.2px;}
     th:nth-child(1),td:nth-child(1){ text-align:center; width:44px; color:var(--muted); }
     th:nth-child(2),td:nth-child(2){ text-align:left; }
     td.num { font-variant-numeric:tabular-nums; }
@@ -85,13 +86,13 @@
           <th class="sortable" data-sort="rnk">#<span class="arr"></span></th>
           <th class="sortable" data-sort="name">종목<span class="arr"></span></th>
           <th class="sortable" data-sort="lastPrice">현재가<span class="arr"></span></th>
-          <th class="sortable" data-sort="changeRate">등락률<span class="arr"></span></th>
-          <th>흐름</th>
-          <th class="sortable" data-sort="trendPct" title="현재가 vs 이동평균">추세<span class="arr"></span></th>
-          <th class="sortable" data-sort="dipPct" title="최근 고점 대비 낙폭">딥<span class="arr"></span></th>
-          <th class="sortable" data-sort="swingPos" title="지지~저항 내 현재 위치">스윙<span class="arr"></span></th>
-          <th class="sortable" data-sort="volume">거래량<span class="arr"></span></th>
-          <th class="sortable" data-sort="tradingValue">거래대금<span class="arr"></span></th>
+          <th class="sortable" data-sort="changeRate">등락률<span class="arr"></span><span class="hb">전일대비</span></th>
+          <th title="최근 20일 종가 흐름">흐름<span class="hb">최근20일</span></th>
+          <th class="sortable" data-sort="trendPct" title="현재가 vs 30일 이동평균(MA30)">추세<span class="arr"></span><span class="hb">30일선</span></th>
+          <th class="sortable" data-sort="dipPct" title="최근 20일 고점 대비 낙폭">딥<span class="arr"></span><span class="hb">20일고점</span></th>
+          <th class="sortable" data-sort="swingPos" title="최근 20일 지지(저점)~저항(고점) 내 현재 위치">스윙<span class="arr"></span><span class="hb">20일</span></th>
+          <th class="sortable" data-sort="volume">거래량<span class="arr"></span><span class="hb">당일</span></th>
+          <th class="sortable" data-sort="tradingValue">거래대금<span class="arr"></span><span class="hb">당일</span></th>
         </tr>
       </thead>
       <tbody id="rows"><tr><td class="empty" colspan="10">불러오는 중…</td></tr></tbody>

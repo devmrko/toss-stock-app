@@ -23,6 +23,7 @@
     table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.06); }
     th,td { padding:10px 12px; text-align:right; border-bottom:1px solid var(--line); font-size:14px; }
     th { background:#f1f3f5; color:#495057; font-weight:600; font-size:12px; }
+    th .hb{display:block;font-weight:400;color:#adb5bd;font-size:10px;margin-top:1px;letter-spacing:-.2px;}
     th:nth-child(1),td:nth-child(1){ text-align:left; }
     td.num { font-variant-numeric:tabular-nums; }
     .up{color:var(--up);} .down{color:var(--down);} .flat{color:var(--muted);} .dimv{color:#adb5bd;}
@@ -46,6 +47,10 @@
     .sidetag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;}
     .sidetag.BUY{background:#ffe3e3;color:#e03131;} .sidetag.SELL{background:#e7f1ff;color:#1971c2;}
     .qzero{color:#adb5bd;}
+    .news-badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:6px;}
+    .news-badge.nb-up{background:#ffe3e3;color:#e03131;} .news-badge.nb-down{background:#e7f5ff;color:#1971c2;}
+    .filterbar{display:flex;gap:12px;align-items:center;margin-bottom:10px;font-size:13px;color:var(--muted);}
+    .filterbar label{display:flex;gap:5px;align-items:center;cursor:pointer;}
 
     .topnav{display:flex;gap:4px;padding:8px 24px;background:#fff;border-bottom:1px solid #e9ecef;flex-wrap:wrap;position:sticky;top:0;z-index:40;}
     .topnav a{padding:7px 14px;border-radius:8px;text-decoration:none;color:#495057;font-size:14px;font-weight:600;}
@@ -85,13 +90,14 @@
       <button type="submit">+ 거래 추가</button>
     </form>
     <div id="summary" class="summary" style="display:none"></div>
+    <div class="filterbar"><label><input type="checkbox" id="showClosed"/> 청산(순수량 0) 종목 표시</label></div>
     <table>
       <thead>
         <tr>
-          <th>종목</th><th title="순보유=Σ매수−Σ매도">순수량</th><th>평단가</th><th>현재가</th><th title="(현재−평단)/평단">수익률</th>
-          <th title="순수량×(현재−평단)">평가손익</th><th title="실현된 매도 손익">실현손익</th><th>보유일</th>
-          <th title="평단×(1−손절%)">스탑가(-N%)</th><th title="현재가 대비 스탑까지 여유">스탑까지</th>
-          <th title="최초매수 후 최고가">매수후고점</th><th title="고점 대비 현재 낙폭">고점대비</th><th></th>
+          <th>종목</th><th title="순보유=Σ매수−Σ매도">순수량<span class="hb">매수−매도</span></th><th title="매수 가중평균 단가">평단가<span class="hb">매수가중</span></th><th>현재가</th><th title="전일 종가 대비 등락">1일<span class="hb">전일대비</span></th><th title="7일 전 종가 대비 등락">7일<span class="hb">7일전</span></th><th title="(현재−평단)/평단">수익률<span class="hb">vs평단</span></th>
+          <th title="순수량×(현재−평단)">평가손익<span class="hb">미실현</span></th><th title="Σ매도수량×(매도가−평단)">실현손익<span class="hb">매도실현</span></th><th title="최초 매수일 이후 경과">보유일<span class="hb">최초매수후</span></th>
+          <th title="평단×(1−손절%)">스탑가<span class="hb">평단·-N%</span></th><th title="현재가 대비 스탑까지 여유">스탑까지<span class="hb">vs현재가</span></th>
+          <th title="최초 매수일 이후 최고가">매수후고점<span class="hb">최초매수후</span></th><th title="고점 대비 현재 낙폭(MDD)">고점대비<span class="hb">낙폭</span></th><th></th>
         </tr>
       </thead>
       <tbody id="rows"><tr><td class="empty" colspan="13">불러오는 중…</td></tr></tbody>
@@ -107,18 +113,45 @@
     const pct = v => v == null ? '<span class="dimv">-</span>' : `<span class="${cls(v)}">${sign(v)}${v.toFixed(2)}%</span>`;
     const when = t => t ? new Date(t).toLocaleDateString('ko-KR', {year:'2-digit',month:'2-digit',day:'2-digit'}) : '-';
 
+    // 뉴스 S뱃지(탑50/워치리스트와 동일 소스)
+    let signals = {};
+    const sDir = lv => (lv==='S1'||lv==='S2') ? 'down' : (lv==='S4'||lv==='S5') ? 'up' : 'flat';
+    const sStr = lv => ({S1:2,S2:1,S4:1,S5:2})[lv] || 0;
+    const sLabel = lv => ({S1:'강한악재',S2:'약한악재',S4:'약한호재',S5:'강한호재'})[lv] || '';
+    function newsBadge(symbol, sector) {
+      const a = signals[symbol], b = signals[sector];
+      const lv = (sStr(a) >= sStr(b)) ? a : b;
+      if (!lv || lv === 'S3') return '';
+      const e = sDir(lv)==='down' ? '🔴' : '🟢';
+      const on = (lv===a) ? symbol : sector;
+      return `<span class="news-badge nb-${sDir(lv)}" title="${on} ${sLabel(lv)}">${e}${lv}</span>`;
+    }
+
+    let lastRows = [];
     async function load() {
       try {
-        const rows = await (await fetch('/api/holdings')).json();
-        render(rows);
+        const [rows, sig] = await Promise.all([
+          fetch('/api/holdings').then(r => r.json()),
+          fetch('/api/news/signals').then(r => r.ok ? r.json() : {}).catch(() => ({}))
+        ]);
+        signals = sig || {};
+        lastRows = rows;
+        render();
         $updated.textContent = '갱신 ' + new Date().toLocaleTimeString('ko-KR');
       } catch (e) { $updated.textContent = '조회 실패'; }
     }
 
     const expanded = new Set();  // 펼친 종목(갱신해도 유지)
-    function render(rows) {
+    function render() {
+      const showClosed = document.getElementById('showClosed').checked;
+      const rows = showClosed ? lastRows : lastRows.filter(h => h.netQty !== 0);
+      if (!lastRows.length) {
+        $rows.innerHTML = '<tr><td class="empty" colspan="15">보유 종목이 없어요. 위에서 매수 거래를 추가하세요.</td></tr>';
+        $sum.style.display = 'none';
+        return;
+      }
       if (!rows.length) {
-        $rows.innerHTML = '<tr><td class="empty" colspan="13">보유 종목이 없어요. 위에서 매수 거래를 추가하세요.</td></tr>';
+        $rows.innerHTML = '<tr><td class="empty" colspan="15">표시할 종목이 없어요. ‘청산 종목 표시’를 켜보세요.</td></tr>';
         $sum.style.display = 'none';
         return;
       }
@@ -133,10 +166,12 @@
         const qty = h.netQty == null ? '<span class="dimv">-</span>'
           : (h.netQty === 0 ? '<span class="qzero">0 청산</span>' : fmt.format(h.netQty));
         const row = `<tr class="${danger ? 'danger' : ''}">
-          <td><span class="name">${h.name ?? '-'}</span><span class="code">${h.symbol}</span>${h.sector ? `<span class="sector">${h.sector}</span>` : ''}${danger ? '<span class="stopbadge">🔴 손절</span>' : ''}</td>
+          <td><span class="name">${h.name ?? '-'}</span><span class="code">${h.symbol}</span>${h.sector ? `<span class="sector">${h.sector}</span>` : ''}${newsBadge(h.symbol, h.sector)}${danger ? '<span class="stopbadge">🔴 손절</span>' : ''}</td>
           <td class="num">${qty}</td>
           <td class="num">${n(h.avgCost, 2)}</td>
           <td class="num">${n(h.currentPrice)}</td>
+          <td class="num">${pct(h.change1dPct)}</td>
+          <td class="num">${pct(h.change7dPct)}</td>
           <td class="num">${pct(h.unrealizedPct)}</td>
           <td class="num ${cls(h.unrealizedAmount)}">${h.unrealizedAmount == null ? '<span class="dimv">-</span>' : sign(h.unrealizedAmount) + n(h.unrealizedAmount)}</td>
           <td class="num ${cls(h.realizedAmount)}">${h.realizedAmount == null ? '<span class="dimv">-</span>' : sign(h.realizedAmount) + n(h.realizedAmount)}</td>
@@ -147,7 +182,7 @@
           <td class="num">${h.ddFromPeak == null ? '<span class="dimv">-</span>' : `<span class="down">-${h.ddFromPeak.toFixed(2)}%</span>`}</td>
           <td class="actcell"><button class="bf" data-sym="${h.symbol}" data-from="${h.firstBuyAt ? h.firstBuyAt.slice(0, 10) : ''}" title="일봉 백필">↻</button><button class="exp" data-sym="${h.symbol}" title="거래내역">${open ? '▾' : '▸'}${h.trades.length}</button></td>
         </tr>`;
-        const sub = open ? `<tr class="trades"><td colspan="13"><table class="tradetbl">${h.trades.map(t => `
+        const sub = open ? `<tr class="trades"><td colspan="15"><table class="tradetbl">${h.trades.map(t => `
           <tr><td style="text-align:left"><span class="sidetag ${t.side}">${t.side === 'SELL' ? '매도' : '매수'}</span></td>
           <td class="num">${when(t.tradedAt)}</td>
           <td class="num">${n(t.price, 2)}</td>
@@ -258,6 +293,9 @@
         return;
       }
     });
+
+    // 청산 필터 토글 → 즉시 다시 그림(재조회 없이)
+    document.getElementById('showClosed').addEventListener('change', render);
 
     // 매수일시 기본값 = 지금
     (function () {

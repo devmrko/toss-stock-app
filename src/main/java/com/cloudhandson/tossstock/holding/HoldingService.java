@@ -1,5 +1,6 @@
 package com.cloudhandson.tossstock.holding;
 
+import com.cloudhandson.tossstock.market.DailyOhlcv;
 import com.cloudhandson.tossstock.market.DailyOhlcvMapper;
 import com.cloudhandson.tossstock.market.UniverseMapper;
 import com.cloudhandson.tossstock.toss.TossApiClient;
@@ -10,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -54,12 +56,19 @@ public class HoldingService {
                 .collect(Collectors.toMap(TossPrice::symbol, p -> new BigDecimal(p.lastPrice()), (a, b) -> a));
         Map<String, String> nameBySym = safe(() -> toss.getStocks(symbols)).stream()
                 .collect(Collectors.toMap(TossStock::symbol, TossStock::name, (a, b) -> a));
+        // 1일/7일 등락용 최근 일봉(전 종목 1쿼리)
+        Map<String, List<DailyOhlcv>> recentBySym = safe(() ->
+                dailyMapper.recentForSymbols(symbols, LocalDate.now().minusDays(20))).stream()
+                .collect(Collectors.groupingBy(DailyOhlcv::getSymbol, LinkedHashMap::new, Collectors.toList()));
 
         LocalDateTime now = LocalDateTime.now();
         return bySym.entrySet().stream().map(e -> {
             String sym = e.getKey();
             List<Holding> trades = e.getValue();
             BigDecimal cur = priceBySym.get(sym);
+            List<DailyOhlcv> bars = recentBySym.getOrDefault(sym, List.of());
+            Double c1 = changePct(bars, 1, true);
+            Double c7 = changePct(bars, 7, false);
             BigDecimal peak = null, trough = null;
             LocalDate firstBuyDate = trades.stream()
                     .filter(t -> !t.isSell()).map(Holding::getBuyAt).filter(Objects::nonNull)
@@ -69,7 +78,7 @@ public class HoldingService {
                 peak = dec(r == null ? null : r.get("MAXHIGH"));
                 trough = dec(r == null ? null : r.get("MINLOW"));
             }
-            return PositionCalc.of(sym, nameBySym.get(sym), safeSector(sym), trades, cur, peak, trough, now);
+            return PositionCalc.of(sym, nameBySym.get(sym), safeSector(sym), trades, cur, c1, c7, peak, trough, now);
         }).toList();
     }
 
@@ -92,5 +101,34 @@ public class HoldingService {
 
     private static BigDecimal dec(Object o) {
         return o instanceof BigDecimal b ? b : (o instanceof Number n ? BigDecimal.valueOf(n.doubleValue()) : null);
+    }
+
+    /** 최근 일봉 종가로 등락%. byBar=true: 직전 거래일 대비(1일), false: n일 전(달력) 종가 대비. */
+    private static Double changePct(List<DailyOhlcv> bars, int n, boolean byBar) {
+        if (bars.size() < 2) {
+            return null;
+        }
+        DailyOhlcv lastBar = bars.get(bars.size() - 1);
+        BigDecimal last = lastBar.getCloseP();
+        BigDecimal base = null;
+        if (byBar) {
+            base = bars.get(bars.size() - 2).getCloseP();
+        } else {
+            LocalDate target = lastBar.getTradeDate().minusDays(n);
+            for (int i = bars.size() - 2; i >= 0; i--) {
+                if (!bars.get(i).getTradeDate().isAfter(target)) {
+                    base = bars.get(i).getCloseP();
+                    break;
+                }
+            }
+            if (base == null) {
+                base = bars.get(0).getCloseP();  // n일치 데이터 부족 시 가장 오래된 종가
+            }
+        }
+        if (last == null || base == null || base.signum() == 0) {
+            return null;
+        }
+        return last.subtract(base).divide(base, 6, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 }
