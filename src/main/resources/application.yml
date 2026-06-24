@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 spring:
   application:
@@ -34,9 +34,10 @@ toss:
 # 뉴스 S1-S5 분류 (#425)
 news:
   feeds: ${NEWS_RSS_FEEDS:https://www.hankyung.com/feed/finance,https://www.yna.co.kr/rss/economy.xml}
-  openrouter-key: ${OPENROUTER_API_KEY:}
-  openrouter-model: ${OPENROUTER_MODEL:anthropic/claude-haiku-4.5}
-  openrouter-url: ${OPENROUTER_URL:https://openrouter.ai/api/v1/chat/completions}
+  # LLM(OpenAI 호환): base-url + api-key + model 자유 지정. OPENROUTER_* 는 하위호환 폴백.
+  llm-api-key: ${LLM_API_KEY:${OPENROUTER_API_KEY:}}
+  llm-model: ${LLM_MODEL:${OPENROUTER_MODEL:gpt-4o-mini}}
+  llm-base-url: ${LLM_BASE_URL:${OPENROUTER_URL:https://api.openai.com/v1}}
   interval-ms: ${NEWS_INTERVAL_MS:600000}
   max-per-run: ${NEWS_MAX_PER_RUN:40}
 

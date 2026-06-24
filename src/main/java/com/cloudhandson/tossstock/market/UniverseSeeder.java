@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
@@ -13,9 +14,10 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 
-/** 기동(운영 default 프로파일) 시 universe 가 비어 있으면 KRX 시드(JSON)로 채운다. 멱등. */
+/** 기동(운영 default 프로파일) 시 universe 가 비어 있으면 KRX 시드(JSON)로 채운다. 멱등. 스키마 생성 후 실행(@Order). */
 @Component
 @Profile("default")
+@Order(20)
 public class UniverseSeeder implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(UniverseSeeder.class);

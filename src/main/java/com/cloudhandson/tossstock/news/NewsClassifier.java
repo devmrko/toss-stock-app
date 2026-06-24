@@ -59,7 +59,13 @@ public class NewsClassifier {
     }
 
     public boolean enabled() {
-        return props.openrouterKey() != null && !props.openrouterKey().isBlank();
+        return props.llmApiKey() != null && !props.llmApiKey().isBlank();
+    }
+
+    /** base-url 이 풀 경로면 그대로, 아니면 /chat/completions 를 붙인다(OpenAI 호환). */
+    private String chatUrl() {
+        String b = props.llmBaseUrl() == null ? "" : props.llmBaseUrl().strip();
+        return b.endsWith("/chat/completions") ? b : b.replaceAll("/+$", "") + "/chat/completions";
     }
 
     /** 기사 제목 분류 → 해석된 결과. 실패 시 null. */
@@ -75,19 +81,19 @@ public class NewsClassifier {
     private String call(String title) {
         try {
             String body = om.writeValueAsString(Map.of(
-                    "model", props.openrouterModel(),
+                    "model", props.llmModel(),
                     "max_tokens", 400,
                     "messages", List.of(
                             Map.of("role", "system", "content", SYSTEM),
                             Map.of("role", "user", "content", "기사: " + title + "\nReturn the JSON now."))));
-            HttpRequest req = HttpRequest.newBuilder(URI.create(props.openrouterUrl()))
-                    .header("Authorization", "Bearer " + props.openrouterKey())
+            HttpRequest req = HttpRequest.newBuilder(URI.create(chatUrl()))
+                    .header("Authorization", "Bearer " + props.llmApiKey())
                     .header("Content-Type", "application/json")
                     .timeout(Duration.ofSeconds(40))
                     .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (res.statusCode() >= 400) {
-                log.warn("OpenRouter HTTP {}: {}", res.statusCode(), clip(res.body()));
+                log.warn("LLM HTTP {}: {}", res.statusCode(), clip(res.body()));
                 return null;
             }
             return om.readTree(res.body()).path("choices").path(0).path("message").path("content").asText(null);

@@ -20,27 +20,29 @@
 
 > 주문(`POST /api/v1/orders`)은 **이번 범위 아님**(리스크). 읽기 전용.
 
-## 설정 (.env)
-`.env.example` 복사 후 채우기:
-```
-TOSS_API_BASE_URL=https://openapi.tossinvest.com
-TOSS_CLIENT_KEY=...
-TOSS_SECRET_KEY=...
-# Oracle Autonomous DB (mTLS 월렛)
-ORACLE_TNS_ADMIN=/abs/path/to/Wallet_XXXX
-ORACLE_SERVICE=xxxx_tp
-ORACLE_USER=admin
-ORACLE_PASSWORD=...
-```
+## 빠른 시작 (clone & run)
+> 준비물: **Java 21**, **토스증권 Open API 키**, **Oracle DB(Autonomous + mTLS 월렛)**. (Maven 은 동봉된 `./mvnw` 사용)
 
-스키마 생성(최초 1회): `db/watchlist.sql` 을 SQLcl/Database Actions 에서 실행하거나
-`OracleWatchlistIT` 가 부팅 시 멱등 생성.
-
-## 실행
 ```bash
-set -a; . ./.env; set +a            # .env → 환경변수
-mvn spring-boot:run                  # http://localhost:8080
+git clone <repo-url> && cd toss-stock-app
+cp .env.example .env          # 값 채우기 (아래 표 참고)
+set -a; . ./.env; set +a      # .env → 환경변수
+./mvnw spring-boot:run        # http://localhost:8080  (포트 변경: SERVER_PORT=8081)
 ```
+- **테이블은 기동 시 자동 생성**(`SchemaInitializer`, 멱등) — 별도 DDL 실행 불필요.
+- **유니버스(KRX 상장목록)도 자동 시드**, **뉴스는 LLM 키가 있으면 기동 직후 자동 수집**.
+- 빌드 산출물(실행 jar): `./mvnw -DskipTests package` → `java -jar target/toss-stock-app-*.jar`
+
+### 환경변수
+| 구분 | 키 | 설명 |
+|---|---|---|
+| **필수** | `TOSS_CLIENT_KEY` / `TOSS_SECRET_KEY` | 토스증권 Open API |
+| **필수** | `ORACLE_TNS_ADMIN` | OCI 월렛 폴더 절대경로(`cwallet.sso` 포함) |
+| **필수** | `ORACLE_SERVICE` / `ORACLE_USER` / `ORACLE_PASSWORD` | 서비스명(`xxxx_tp`)·계정 |
+| 선택 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | **뉴스 분류용 OpenAI 호환 LLM**. 없으면 핵심기능만 동작 |
+| 선택 | `SERVER_PORT` | 기본 8080 |
+
+> **뉴스 LLM**은 OpenAI 호환이면 무엇이든 가능 — OpenAI(`https://api.openai.com/v1`, `gpt-4o-mini`), OpenRouter(`https://openrouter.ai/api/v1`, `anthropic/claude-haiku-4.5`), 로컬 ollama/vLLM 등. `LLM_BASE_URL` 은 base 또는 풀 `/chat/completions` 경로 모두 허용. (기존 `OPENROUTER_*` 도 폴백 지원)
 
 ### 웹페이지
 - **`GET /watchlist.html`** — 워치리스트 거래량 모니터링 (5초 폴링, 거래량 내림차순, 상위 50). 설계: `docs/design/414-watchlist-page/`

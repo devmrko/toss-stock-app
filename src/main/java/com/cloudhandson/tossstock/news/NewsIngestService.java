@@ -32,10 +32,13 @@ public class NewsIngestService {
         this.mapper = mapper;
     }
 
-    @Scheduled(fixedDelayString = "${news.interval-ms:600000}", initialDelay = 20000)
+    // 기동 직후(5s) 1회 + 이후 주기. LLM(OpenAI 호환) 키 없으면 뉴스 수집 스킵.
+    @Scheduled(fixedDelayString = "${news.interval-ms:600000}", initialDelay = 5000)
     public void scheduled() {
         if (classifier.enabled()) {
             ingest();
+        } else {
+            log.info("OPENROUTER_API_KEY 미설정 — 뉴스 수집/분류 비활성(핵심 기능은 정상). 뉴스 사용시 키를 설정하세요.");
         }
     }
 
@@ -77,7 +80,7 @@ public class NewsIngestService {
                     continue;   // RECEIVED 유지(다음 주기 재시도)
                 }
                 mapper.updateAnalyzed(row.getId(), c.targetsCsv(), c.sentimentCsv(),
-                        rationale(c), c.kind(), props.openrouterModel(), ttl(c.maxStrength()));
+                        rationale(c), c.kind(), props.llmModel(), ttl(c.maxStrength()));
                 analyzed++;
             }
             log.info("뉴스 수집: fetched={} inserted={} analyzed={}", items.size(), inserted, analyzed);
