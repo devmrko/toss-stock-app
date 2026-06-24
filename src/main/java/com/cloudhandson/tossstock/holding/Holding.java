@@ -13,6 +13,7 @@ public class Holding {
     private Long quantity;     // 수량(매도는 필수)
     private Double stopPct;    // 하드스탑 %(기본 8)
     private String memo;
+    private String broker;     // 매매처(증권사/계좌) (#441)
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }
@@ -32,6 +33,8 @@ public class Holding {
     public void setStopPct(Double stopPct) { this.stopPct = stopPct; }
     public String getMemo() { return memo; }
     public void setMemo(String memo) { this.memo = memo; }
+    public String getBroker() { return broker; }
+    public void setBroker(String broker) { this.broker = broker; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

@@ -48,7 +48,8 @@ public final class BriefingFormatter {
             sb.append("• **").append(p.name() == null ? p.symbol() : p.name()).append("** ")
                     .append(p.netQty() == null ? "?" : num(p.netQty())).append("주 · 평단 ")
                     .append(num(p.avgCost())).append(" → ").append(num(p.currentPrice()))
-                    .append(' ').append(pct(p.unrealizedPct())).append('\n');
+                    .append(' ').append(pct(p.unrealizedPct()))
+                    .append(p.broker() == null ? "" : "  🏦" + p.broker()).append('\n');
             // 조정 손절가 = max(평단, 매수후고점) × (1 − 손절%) — 고점 따라 올라가는 트레일링
             double stopPct = p.stopPct() == null ? 0 : p.stopPct();
             BigDecimal adj = adjustedStop(p.avgCost(), p.peakSinceBuy(), p.stopPrice(), stopPct);

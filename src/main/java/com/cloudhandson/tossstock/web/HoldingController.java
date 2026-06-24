@@ -60,6 +60,7 @@ public class HoldingController {
         h.setQuantity(req.quantity());
         h.setStopPct(req.stopPct() != null ? req.stopPct() : 8.0);
         h.setMemo(req.memo());
+        h.setBroker(req.broker() != null && !req.broker().isBlank() ? req.broker().trim() : null);
         mapper.insert(h);
         // 매수 등록 시에만 거래일부터 현재까지 일봉 백필(지표·고점/MDD 채움). 매도는 불필요.
         if (!sell) {
@@ -85,7 +86,7 @@ public class HoldingController {
         return ResponseEntity.noContent().build();
     }
 
-    public record AddRequest(String symbol, String side, LocalDateTime buyAt, BigDecimal buyPrice,
+    public record AddRequest(String symbol, String side, String broker, LocalDateTime buyAt, BigDecimal buyPrice,
                              Long quantity, Double stopPct, String memo) {
     }
 }

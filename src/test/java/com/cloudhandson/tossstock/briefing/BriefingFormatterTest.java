@@ -23,7 +23,7 @@ class BriefingFormatterTest {
                                     double unrealPct, Long unrealAmt) {
         return new PositionView("005930", "삼성전자", "반도체", netQty, bd(avg), bd(cur),
                 null, null, unrealPct, unrealAmt, null, 5L, stopPct, bd(avg * (1 - stopPct / 100)), 7.0, false,
-                bd(peak), null, false, NOW.minusDays(5), List.of());
+                bd(peak), null, false, NOW.minusDays(5), null, List.of());
     }
 
     private static WatchlistQuote wq(String name, double last, Double rate) {

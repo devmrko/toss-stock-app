@@ -34,6 +34,16 @@ class PositionCalcTest {
     }
 
     @Test
+    void broker_distinct_joined() {
+        Holding b1 = t("BUY", 100, 10L, 6, 8.0); b1.setBroker("토스");
+        Holding b2 = t("BUY", 200, 10L, 3, 8.0); b2.setBroker("키움");
+        PositionView p = calc(List.of(b1, b2), bd(150));
+        assertThat(p.broker()).isEqualTo("토스, 키움");
+        assertThat(p.trades()).extracting(com.cloudhandson.tossstock.holding.TradeView::broker)
+                .containsExactlyInAnyOrder("토스", "키움");
+    }
+
+    @Test
     void single_buy() {
         PositionView p = calc(List.of(t("BUY", 100, 10L, 5, 8.0)), bd(120));
         assertThat(p.netQty()).isEqualTo(10L);

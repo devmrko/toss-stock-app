@@ -113,12 +113,18 @@ public final class PositionCalc {
                 .map(t -> new TradeView(t.getId(), t.isSell() ? "SELL" : "BUY", t.getBuyAt(), t.getBuyPrice(),
                         t.getQuantity(),
                         (current != null && t.getBuyPrice().signum() != 0)
-                                ? pct(current.subtract(t.getBuyPrice()), t.getBuyPrice()) : null))
+                                ? pct(current.subtract(t.getBuyPrice()), t.getBuyPrice()) : null,
+                        t.getBroker()))
                 .toList();
+
+        // 매매처: 비어있지 않은 값 distinct(입력순) 결합
+        String broker = sorted.stream().map(Holding::getBroker)
+                .filter(b -> b != null && !b.isBlank()).map(String::trim).distinct()
+                .reduce((a, b) -> a + ", " + b).orElse(null);
 
         return new PositionView(symbol, name, sector, netQty, avgCost, current,
                 change1dPct, change7dPct, unrealizedPct, unrealizedAmount, realizedAmount, daysHeld,
-                stopPct, stopPrice, stopDistPct, belowStop, peak, ddFromPeak, stopHit, firstBuyAt, tv);
+                stopPct, stopPrice, stopDistPct, belowStop, peak, ddFromPeak, stopHit, firstBuyAt, broker, tv);
     }
 
     private static Double pct(BigDecimal num, BigDecimal den) {

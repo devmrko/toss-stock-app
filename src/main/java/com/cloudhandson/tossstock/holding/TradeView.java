@@ -10,6 +10,7 @@ public record TradeView(
         LocalDateTime tradedAt,
         BigDecimal price,
         Long quantity,
-        Double returnPct        // 현재가 대비 체결가 변동 %(참고)
+        Double returnPct,       // 현재가 대비 체결가 변동 %(참고)
+        String broker           // 매매처 (#441)
 ) {
 }

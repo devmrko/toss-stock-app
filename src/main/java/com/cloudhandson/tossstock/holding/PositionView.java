@@ -26,6 +26,7 @@ public record PositionView(
         Double ddFromPeak,
         boolean stopHitSinceBuy,
         LocalDateTime firstBuyAt,
+        String broker,             // 매매처(중복 제거 결합) (#441)
         List<TradeView> trades     // 거래내역(최신순)
 ) {
 }
