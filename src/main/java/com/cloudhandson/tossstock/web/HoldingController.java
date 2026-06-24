@@ -86,6 +86,18 @@ public class HoldingController {
         return ResponseEntity.noContent().build();
     }
 
+    /** 종목 매매처 수정(그 종목 전 거래 일괄). 빈 값이면 해제(NULL). */
+    @org.springframework.web.bind.annotation.PutMapping("/broker")
+    public ResponseEntity<Void> updateBroker(@org.springframework.web.bind.annotation.RequestParam String symbol,
+                                             @org.springframework.web.bind.annotation.RequestParam(required = false) String broker) {
+        if (symbol == null || symbol.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "symbol 필수");
+        }
+        String b = (broker == null || broker.isBlank()) ? null : broker.trim();
+        mapper.updateBrokerBySymbol(symbol.trim(), b);
+        return ResponseEntity.noContent().build();
+    }
+
     public record AddRequest(String symbol, String side, String broker, LocalDateTime buyAt, BigDecimal buyPrice,
                              Long quantity, Double stopPct, String memo) {
     }

@@ -37,7 +37,8 @@ public class SchemaInitializer implements ApplicationRunner {
             "db/watchlist.sql",    // watchlist
             "db/holding.sql",      // holding (+ side)
             "db/stock_news.sql",   // stock_news
-            "db/us_universe.sql"   // us_universe
+            "db/us_universe.sql",  // us_universe
+            "db/broker.sql"        // broker_ref (#442)
     );
 
     private final JdbcTemplate jdbc;
