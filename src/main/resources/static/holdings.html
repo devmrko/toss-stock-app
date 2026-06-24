@@ -263,7 +263,44 @@
         + ` · 평가금액 ${hasInv && hasU ? `<b>${n(totInv + totU)}원</b>` : '<span class="dimv">-</span>'}`
         + ` · 평균 수익률 ${pct(avg)}`
         + ` · 평가손익 ${hasU ? `<b class="${cls(totU)}">${sign(totU)}${n(totU)}원</b>` : '<span class="dimv">-</span>'}`
-        + ` · 실현손익 ${hasR ? `<b class="${cls(totR)}">${sign(totR)}${n(totR)}원</b>` : '<span class="dimv">-</span>'}`;
+        + ` · 실현손익 ${hasR ? `<b class="${cls(totR)}">${sign(totR)}${n(totR)}원</b>` : '<span class="dimv">-</span>'}`
+        + brokerBreakdown(rows);
+    }
+
+    // 투자기관별 요약: 거래를 (기관·종목) 단위 평균단가 집계 → 투자금액·평가·수익률
+    function brokerBreakdown(rows) {
+      const agg = {}, px = {};
+      for (const p of rows) {
+        px[p.symbol] = p.currentPrice;
+        const trades = [...p.trades].sort((a, b) => (a.tradedAt || '').localeCompare(b.tradedAt || ''));
+        for (const t of trades) {
+          if (t.quantity == null) continue;
+          const bk = t.broker || '(미지정)';
+          (agg[bk] = agg[bk] || {});
+          const c = (agg[bk][p.symbol] = agg[bk][p.symbol] || { qty: 0, cost: 0 });
+          if (t.side === 'SELL') { const a = c.qty > 0 ? c.cost / c.qty : t.price; c.cost -= t.quantity * a; c.qty -= t.quantity; }
+          else { c.qty += t.quantity; c.cost += t.quantity * t.price; }
+        }
+      }
+      const list = [];
+      for (const bk in agg) {
+        let inv = 0, val = 0, hasCur = true;
+        for (const sym in agg[bk]) {
+          const c = agg[bk][sym]; if (c.qty <= 0) continue;
+          inv += c.cost;
+          if (px[sym] == null) hasCur = false; else val += c.qty * px[sym];
+        }
+        if (inv > 0) list.push({ bk, inv: Math.round(inv), val: hasCur ? Math.round(val) : null });
+      }
+      if (!list.length) return '';
+      list.sort((a, b) => b.inv - a.inv);
+      const parts = list.map(x => {
+        const pnl = x.val == null ? null : x.val - x.inv;
+        const pv = (pnl != null && x.inv) ? pnl / x.inv * 100 : null;
+        return `<span class="broker">🏦 ${x.bk}</span> 투자 <b>${n(x.inv)}</b> · 평가 ${x.val == null ? '-' : `<b>${n(x.val)}</b>`}`
+          + (pv == null ? '' : ` <span class="${cls(pv)}">${sign(pv)}${pv.toFixed(1)}%</span>`);
+      });
+      return `<div style="margin-top:7px;font-size:13px;line-height:1.9">🏦 <b>투자기관별</b> &nbsp;${parts.join(' &nbsp;|&nbsp; ')}</div>`;
     }
 
     // 종목 검색 자동완성
