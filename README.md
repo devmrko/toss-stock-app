@@ -40,6 +40,7 @@ set -a; . ./.env; set +a      # .env → 환경변수
 | **필수** | `ORACLE_TNS_ADMIN` | OCI 월렛 폴더 절대경로(`cwallet.sso` 포함) |
 | **필수** | `ORACLE_SERVICE` / `ORACLE_USER` / `ORACLE_PASSWORD` | 서비스명(`xxxx_tp`)·계정 |
 | 선택 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | **뉴스 분류용 OpenAI 호환 LLM**. 없으면 핵심기능만 동작 |
+| 선택 | `DISCORD_WEBHOOK_URL` / `TAKE_PROFIT_PCT` | 평일 09:00·15:30 KST **Discord 브리핑**(보유 익절/손절가 + 워치리스트) |
 | 선택 | `SERVER_PORT` | 기본 8080 |
 
 > **뉴스 LLM**은 OpenAI 호환이면 무엇이든 가능 — OpenAI(`https://api.openai.com/v1`, `gpt-4o-mini`), OpenRouter(`https://openrouter.ai/api/v1`, `anthropic/claude-haiku-4.5`), 로컬 ollama/vLLM 등. `LLM_BASE_URL` 은 base 또는 풀 `/chat/completions` 경로 모두 허용. (기존 `OPENROUTER_*` 도 폴백 지원)

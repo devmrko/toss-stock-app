@@ -41,6 +41,14 @@ news:
   interval-ms: ${NEWS_INTERVAL_MS:600000}
   max-per-run: ${NEWS_MAX_PER_RUN:40}
 
+# 장 시작/마감 Discord 브리핑 (#439). webhook-url 없으면 비활성.
+briefing:
+  webhook-url: ${DISCORD_WEBHOOK_URL:}
+  take-profit-pct: ${TAKE_PROFIT_PCT:20}
+  watchlist-limit: ${BRIEFING_WATCHLIST_LIMIT:10}
+  open-cron: ${BRIEFING_OPEN_CRON:0 0 9 * * MON-FRI}
+  close-cron: ${BRIEFING_CLOSE_CRON:0 30 15 * * MON-FRI}
+
 logging:
   level:
     com.cloudhandson.tossstock: INFO
