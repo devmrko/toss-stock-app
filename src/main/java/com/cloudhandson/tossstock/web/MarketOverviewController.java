@@ -16,6 +16,9 @@ import java.util.Map;
 @RequestMapping("/api/market")
 public class MarketOverviewController {
 
+    /** 상승비율 기준일로 인정할 최소 일봉 종목수(전수 스캔 vs 수동 백필 구분). */
+    private static final int BREADTH_MIN_COVERAGE = 100;
+
     private final StockNewsMapper newsMapper;
     private final DailyOhlcvMapper dailyMapper;
 
@@ -43,13 +46,15 @@ public class MarketOverviewController {
         out.put("marketLevel", level);
         out.put("marketNote", note);
 
-        // 상승비율
-        Map<String, Object> b = dailyMapper.breadth();
+        // 상승비율 — 커버리지 충분한 거래일끼리 비교(수동 백필 오염 방지)
+        Map<String, Object> b = dailyMapper.breadth(BREADTH_MIN_COVERAGE);
         long up = num(b == null ? null : b.get("UP"));
         long total = num(b == null ? null : b.get("TOTAL"));
         out.put("up", up);
         out.put("total", total);
         out.put("breadthPct", total > 0 ? Math.round(up * 100.0 / total) : 0);
+        out.put("breadthAsOf", b == null ? null : b.get("REF_DATE"));
+        out.put("breadthPrev", b == null ? null : b.get("PREV_DATE"));
         return out;
     }
 

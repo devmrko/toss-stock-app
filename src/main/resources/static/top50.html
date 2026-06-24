@@ -199,7 +199,8 @@
       const pct = ov.breadthPct;
       const [ic, txt, bg, bd] = pct >= 60 ? ['🟢', '상승장', '#ebfbee', '#b2f2bb'] : pct >= 40 ? ['🟡', '중립', '#fff9db', '#ffe066'] : ['🔴', '하락장', '#fff0f0', '#ffc9c9'];
       $br.style.cssText = `padding:8px 14px;border-radius:8px;margin-bottom:12px;font-size:13px;background:${bg};border:1px solid ${bd}`;
-      $br.innerHTML = `<b>📊 시장 상승비율</b> ${ic} <b>${pct}% ${txt}</b> <span class="dimv">(${ov.up}/${ov.total} 종목, 전일대비 상승)</span>`;
+      const asOf = ov.breadthAsOf ? `${ov.breadthAsOf} 종가` : '최근 거래일';
+      $br.innerHTML = `<b>📊 시장 상승비율</b> ${ic} <b>${pct}% ${txt}</b> <span class="dimv" title="${ov.breadthPrev || ''} 대비">(${ov.up}/${ov.total} 종목 · ${asOf} 전일대비 상승)</span>`;
     }
 
     // 컬럼 정렬 (클라이언트, 폴링 무관)

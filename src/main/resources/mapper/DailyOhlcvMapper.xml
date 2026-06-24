@@ -63,15 +63,32 @@
         WHERE symbol = #{symbol} AND trade_date &gt;= #{fromDate}
     </select>
 
+    <!--
+      상승비율(breadth): 전수 스캔이 채운 '커버리지 충분한 거래일'끼리 비교.
+      수동 단일 종목 백필이 최근 날짜를 오염시켜도(예: 11종목) 흔들리지 않도록,
+      일봉 종목수가 minCoverage 이상인 최신 거래일을 기준일로, 그 직전의 충분한 날을 전일로.
+    -->
     <select id="breadth" resultType="map">
-        SELECT
-            SUM(CASE WHEN t.close_p &gt; p.close_p THEN 1 ELSE 0 END) AS up,
-            COUNT(*) AS total
-        FROM daily_ohlcv t
-        JOIN daily_ohlcv p ON p.symbol = t.symbol
-        WHERE t.trade_date = (SELECT MAX(trade_date) FROM daily_ohlcv)
-          AND p.trade_date = (SELECT MAX(trade_date) FROM daily_ohlcv
-                              WHERE trade_date &lt; (SELECT MAX(trade_date) FROM daily_ohlcv))
+        WITH covered AS (
+            SELECT trade_date
+            FROM daily_ohlcv
+            GROUP BY trade_date
+            HAVING COUNT(*) &gt;= #{minCoverage}
+        ),
+        ref AS (SELECT MAX(trade_date) d FROM covered),
+        prv AS (SELECT MAX(trade_date) d FROM covered WHERE trade_date &lt; (SELECT d FROM ref)),
+        agg AS (
+            SELECT SUM(CASE WHEN t.close_p &gt; p.close_p THEN 1 ELSE 0 END) AS up,
+                   COUNT(*) AS total
+            FROM daily_ohlcv t
+            JOIN daily_ohlcv p ON p.symbol = t.symbol
+            WHERE t.trade_date = (SELECT d FROM ref)
+              AND p.trade_date = (SELECT d FROM prv)
+        )
+        SELECT TO_CHAR((SELECT d FROM ref), 'YYYY-MM-DD') AS ref_date,
+               TO_CHAR((SELECT d FROM prv), 'YYYY-MM-DD') AS prev_date,
+               up, total
+        FROM agg
     </select>
 
 </mapper>

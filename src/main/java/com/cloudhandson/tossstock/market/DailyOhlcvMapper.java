@@ -27,8 +27,8 @@ public interface DailyOhlcvMapper {
     List<DailyOhlcv> recentForSymbols(@Param("symbols") List<String> symbols,
                                       @Param("fromDate") LocalDate fromDate);
 
-    /** 최신 거래일 상승/전체(전일 종가 대비). {UP, TOTAL}. */
-    Map<String, Object> breadth();
+    /** 커버리지(minCoverage 종목 이상) 충분한 최신 거래일 기준 상승/전체. {REF_DATE, PREV_DATE, UP, TOTAL}. */
+    Map<String, Object> breadth(@Param("minCoverage") int minCoverage);
 
     /** 종목의 fromDate 이후 최고가/최저가. {MAXHIGH, MINLOW}. */
     Map<String, Object> rangeSince(@Param("symbol") String symbol, @Param("fromDate") LocalDate fromDate);
