@@ -16,6 +16,6 @@ public interface HoldingMapper {
     /** 종목의 모든 거래 손절% 일괄 변경(포지션 손절% 수정). */
     int updateStopPctBySymbol(@Param("symbol") String symbol, @Param("stopPct") double stopPct);
 
-    /** 종목의 모든 거래 매매처 일괄 변경(null=해제). */
-    int updateBrokerBySymbol(@Param("symbol") String symbol, @Param("broker") String broker);
+    /** 거래 1건의 매매처 변경(null=해제). 투자(거래)별. */
+    int updateBrokerById(@Param("id") Long id, @Param("broker") String broker);
 }

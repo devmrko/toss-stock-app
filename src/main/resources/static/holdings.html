@@ -221,7 +221,7 @@
         const qty = h.netQty == null ? '<span class="dimv">-</span>'
           : (h.netQty === 0 ? '<span class="qzero">0 청산</span>' : fmt.format(h.netQty));
         const row = `<tr class="${danger ? 'danger' : ''}">
-          <td><span class="name">${h.name ?? '-'}</span><span class="code">${h.symbol}</span>${h.sector ? `<span class="sector">${h.sector}</span>` : ''}${h.netQty !== 0 ? `<span class="broker bedit ${h.broker ? '' : 'unset'}" data-sym="${h.symbol}" data-broker="${h.broker || ''}" title="매매처 수정">🏦 ${h.broker || '지정'}</span>` : ''}${newsBadge(h.symbol, h.sector)}${danger ? '<span class="stopbadge">🔴 손절</span>' : ''}</td>
+          <td><span class="name">${h.name ?? '-'}</span><span class="code">${h.symbol}</span>${h.sector ? `<span class="sector">${h.sector}</span>` : ''}${h.broker ? `<span class="broker">🏦 ${h.broker}</span>` : ''}${newsBadge(h.symbol, h.sector)}${danger ? '<span class="stopbadge">🔴 손절</span>' : ''}</td>
           <td class="num">${qty}</td>
           <td class="num">${n(h.avgCost, 2)}</td>
           <td class="num">${inv == null ? '<span class="dimv">-</span>' : n(inv)}</td>
@@ -239,7 +239,7 @@
           <td class="actcell"><button class="bf" data-sym="${h.symbol}" data-from="${h.firstBuyAt ? h.firstBuyAt.slice(0, 10) : ''}" title="일봉 백필">↻</button><button class="exp" data-sym="${h.symbol}" title="거래내역">${open ? '▾' : '▸'}${h.trades.length}</button></td>
         </tr>`;
         const sub = open ? `<tr class="trades"><td colspan="16"><table class="tradetbl">${h.trades.map(t => `
-          <tr><td style="text-align:left"><span class="sidetag ${t.side}">${t.side === 'SELL' ? '매도' : '매수'}</span>${t.broker ? ` <span class="dimv">🏦${t.broker}</span>` : ''}</td>
+          <tr><td style="text-align:left"><span class="sidetag ${t.side}">${t.side === 'SELL' ? '매도' : '매수'}</span> <span class="broker bedit ${t.broker ? '' : 'unset'}" data-id="${t.id}" data-broker="${t.broker || ''}" title="매매처 수정">🏦 ${t.broker || '지정'}</span></td>
           <td class="num">${when(t.tradedAt)}</td>
           <td class="num">${n(t.price, 2)}</td>
           <td class="num">${t.quantity == null ? '<span class="dimv">-</span>' : fmt.format(t.quantity) + '주'}</td>
@@ -337,11 +337,11 @@
       const be = e.target.closest('.bedit');
       if (be) {
         const hint = brokers.length ? '\n등록: ' + brokers.join(', ') : '';
-        const v = prompt('매매처 (비우면 해제)' + hint, be.dataset.broker);
+        const v = prompt('이 거래의 매매처 (비우면 해제)' + hint, be.dataset.broker);
         if (v == null) return;
         const name = v.trim();
         await registerBroker(name);
-        const res = await fetch('/api/holdings/broker?symbol=' + encodeURIComponent(be.dataset.sym) + '&broker=' + encodeURIComponent(name), { method: 'PUT' });
+        const res = await fetch('/api/holdings/' + be.dataset.id + '/broker?broker=' + encodeURIComponent(name), { method: 'PUT' });
         if (!res.ok) { alert('매매처 수정 실패 (HTTP ' + res.status + ')'); return; }
         load(); return;
       }

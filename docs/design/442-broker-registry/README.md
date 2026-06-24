@@ -11,17 +11,17 @@
 - [ ] `GET /api/brokers` 등록된 거래처 목록(이름, 정렬). `POST /api/brokers?name=` 신규 등록(멱등).
 - [ ] 기동 시 국내 주요 증권사 시드(비어있을 때).
 - [ ] 보유 추가 폼 매매처가 등록 목록에서 선택(+ 직접 입력 시 자동 등록).
-- [ ] 보유 행의 매매처(또는 '지정' 자리) 클릭 → 변경 → 그 종목 전 거래 매매처 일괄 수정.
+- [ ] **거래(투자)별** 매매처 수정 — 거래내역(펼침)에서 거래마다 '🏦 지정' 클릭 → 변경(그 거래 1건). 종목 행은 매매처(중복결합) 읽기전용 표시.
 
 ## 3. 데이터/엔드포인트
 - **BROKER_REF**(`name VARCHAR2(40) PK`): 거래처 마스터. 멱등 DDL + `BrokerSeeder`(빈 경우 국내 증권사 시드).
 - `GET /api/brokers` → `List<String>`(이름 ASC). `POST /api/brokers?name=` → MERGE.
-- `PUT /api/holdings/broker?symbol=&broker=` → `HoldingMapper.updateBrokerBySymbol`(그 종목 전 거래). 빈 broker 면 NULL(해제).
+- `PUT /api/holdings/{id}/broker?broker=` → `HoldingMapper.updateBrokerById`(**거래 1건**). 빈 broker 면 NULL(해제). 매매처는 거래(투자)별 속성.
 
 ## 4. UI
 - 로드시 `/api/brokers` → `<datalist id=brokerList>` 채움(폼 + 행편집 공용).
-- 폼 제출 시 입력 매매처가 목록에 없으면 `POST /api/brokers` 자동 등록.
-- 행: 매매처 뱃지/‘🏦 지정’ 클릭 → `prompt`(등록목록 안내) → 신규면 자동 등록 → `PUT /api/holdings/broker` → 재조회.
+- 폼 제출 시 입력 매매처가 목록에 없으면 `POST /api/brokers` 자동 등록(거래 insert 가 broker 포함).
+- 거래내역(펼침) 각 거래의 ‘🏦 지정’/매매처 클릭 → `prompt`(등록목록 안내) → 신규면 자동 등록 → `PUT /api/holdings/{id}/broker` → 재조회. 종목 행 매매처는 읽기전용.
 
 ## 5. 엣지케이스
 - 빈 입력 → 매매처 해제(NULL).

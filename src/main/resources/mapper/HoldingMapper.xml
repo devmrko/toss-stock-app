@@ -23,8 +23,8 @@
         UPDATE holding SET stop_pct = #{stopPct} WHERE symbol = #{symbol}
     </update>
 
-    <update id="updateBrokerBySymbol">
-        UPDATE holding SET broker = #{broker} WHERE symbol = #{symbol}
+    <update id="updateBrokerById">
+        UPDATE holding SET broker = #{broker} WHERE id = #{id}
     </update>
 
 </mapper>

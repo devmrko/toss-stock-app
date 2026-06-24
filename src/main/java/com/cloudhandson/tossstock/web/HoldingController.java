@@ -86,15 +86,12 @@ public class HoldingController {
         return ResponseEntity.noContent().build();
     }
 
-    /** 종목 매매처 수정(그 종목 전 거래 일괄). 빈 값이면 해제(NULL). */
-    @org.springframework.web.bind.annotation.PutMapping("/broker")
-    public ResponseEntity<Void> updateBroker(@org.springframework.web.bind.annotation.RequestParam String symbol,
+    /** 거래(투자) 1건 매매처 수정. 빈 값이면 해제(NULL). */
+    @org.springframework.web.bind.annotation.PutMapping("/{id}/broker")
+    public ResponseEntity<Void> updateBroker(@PathVariable Long id,
                                              @org.springframework.web.bind.annotation.RequestParam(required = false) String broker) {
-        if (symbol == null || symbol.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "symbol 필수");
-        }
         String b = (broker == null || broker.isBlank()) ? null : broker.trim();
-        mapper.updateBrokerBySymbol(symbol.trim(), b);
+        mapper.updateBrokerById(id, b);
         return ResponseEntity.noContent().build();
     }
 
