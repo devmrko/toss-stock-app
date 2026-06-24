@@ -233,6 +233,7 @@
       $sum.style.display = 'block';
       const avg = retCnt ? (retSum / retCnt) : null;
       $sum.innerHTML = `📊 보유 <b>${rows.length}</b>종목 · 총 투자금액 ${hasInv ? `<b>${n(totInv)}원</b>` : '<span class="dimv">-</span>'}`
+        + ` · 평가금액 ${hasInv && hasU ? `<b>${n(totInv + totU)}원</b>` : '<span class="dimv">-</span>'}`
         + ` · 평균 수익률 ${pct(avg)}`
         + ` · 평가손익 ${hasU ? `<b class="${cls(totU)}">${sign(totU)}${n(totU)}원</b>` : '<span class="dimv">-</span>'}`
         + ` · 실현손익 ${hasR ? `<b class="${cls(totR)}">${sign(totR)}${n(totR)}원</b>` : '<span class="dimv">-</span>'}`;
