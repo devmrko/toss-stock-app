@@ -27,6 +27,12 @@
         SELECT sector FROM universe WHERE symbol = #{symbol}
     </select>
 
+    <select id="sectorsForSymbols" resultType="com.cloudhandson.tossstock.market.Universe">
+        SELECT symbol, sector FROM universe
+        WHERE symbol IN
+        <foreach collection="symbols" item="s" open="(" separator="," close=")">#{s}</foreach>
+    </select>
+
     <insert id="insert" parameterType="com.cloudhandson.tossstock.market.Universe">
         INSERT INTO universe (symbol, name, market, ksic, product)
         VALUES (#{symbol}, #{name}, #{market}, #{ksic}, #{product})

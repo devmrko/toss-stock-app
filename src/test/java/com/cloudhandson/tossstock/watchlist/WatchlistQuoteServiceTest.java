@@ -1,7 +1,8 @@
 package com.cloudhandson.tossstock.watchlist;
 
 import com.cloudhandson.tossstock.toss.CandleCache;
-import com.cloudhandson.tossstock.toss.TossApiClient;
+import com.cloudhandson.tossstock.toss.PriceCache;
+import com.cloudhandson.tossstock.toss.StockInfoCache;
 import com.cloudhandson.tossstock.toss.TossApiException;
 import com.cloudhandson.tossstock.toss.dto.TossCandle;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
@@ -22,7 +23,8 @@ import static org.mockito.Mockito.when;
 class WatchlistQuoteServiceTest {
 
     @Mock WatchlistMapper mapper;
-    @Mock TossApiClient toss;
+    @Mock PriceCache priceCache;
+    @Mock StockInfoCache stockInfoCache;
     @Mock CandleCache candleCache;
     @Mock com.cloudhandson.tossstock.market.UniverseMapper universeMapper;
     @InjectMocks WatchlistQuoteService service;
@@ -51,9 +53,9 @@ class WatchlistQuoteServiceTest {
     @Test
     void sorts_by_volume_desc_and_assigns_rank() {
         when(mapper.findAll()).thenReturn(List.of(wl(1, "AAA"), wl(2, "BBB"), wl(3, "CCC")));
-        when(toss.getPrices(List.of("AAA", "BBB", "CCC")))
+        when(priceCache.get(List.of("AAA", "BBB", "CCC")))
                 .thenReturn(List.of(price("AAA", "100"), price("BBB", "200"), price("CCC", "300")));
-        when(toss.getStocks(List.of("AAA", "BBB", "CCC")))
+        when(stockInfoCache.get(List.of("AAA", "BBB", "CCC")))
                 .thenReturn(List.of(stock("AAA", "에이"), stock("BBB", "비"), stock("CCC", "씨")));
         when(candleCache.get("AAA")).thenReturn(candles("100", "90"));
         when(candleCache.get("BBB")).thenReturn(candles("300", "190"));
@@ -98,9 +100,9 @@ class WatchlistQuoteServiceTest {
     @Test
     void partial_candle_failure_marks_row_stale_not_whole() {
         when(mapper.findAll()).thenReturn(List.of(wl(1, "AAA"), wl(2, "BBB")));
-        when(toss.getPrices(List.of("AAA", "BBB")))
+        when(priceCache.get(List.of("AAA", "BBB")))
                 .thenReturn(List.of(price("AAA", "100"), price("BBB", "200")));
-        lenient().when(toss.getStocks(List.of("AAA", "BBB")))
+        lenient().when(stockInfoCache.get(List.of("AAA", "BBB")))
                 .thenReturn(List.of(stock("AAA", "에이"), stock("BBB", "비")));
         when(candleCache.get("AAA")).thenReturn(candles("100", "90"));
         when(candleCache.get("BBB")).thenThrow(new TossApiException("boom", 502));

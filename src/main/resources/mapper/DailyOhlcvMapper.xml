@@ -68,6 +68,17 @@
       수동 단일 종목 백필이 최근 날짜를 오염시켜도(예: 11종목) 흔들리지 않도록,
       일봉 종목수가 minCoverage 이상인 최신 거래일을 기준일로, 그 직전의 충분한 날을 전일로.
     -->
+    <select id="peakTroughBatch" resultType="map">
+        SELECT d.symbol AS symbol, MAX(d.high_p) AS maxhigh, MIN(d.low_p) AS minlow
+        FROM daily_ohlcv d
+        JOIN (
+            <foreach collection="pairs" item="p" separator="UNION ALL">
+                SELECT #{p.symbol} AS sym, #{p.fromDate} AS dt FROM dual
+            </foreach>
+        ) f ON d.symbol = f.sym AND d.trade_date &gt;= f.dt
+        GROUP BY d.symbol
+    </select>
+
     <select id="breadth" resultType="map">
         WITH covered AS (
             SELECT trade_date

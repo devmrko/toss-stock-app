@@ -18,6 +18,9 @@ public interface UniverseMapper {
     /** 6자리 코드 → 섹터. 없으면 null. */
     String findSectorBySymbol(@org.apache.ibatis.annotations.Param("symbol") String symbol);
 
+    /** 여러 코드 → {symbol, sector} 일괄(N+1 제거). */
+    List<Universe> sectorsForSymbols(@org.apache.ibatis.annotations.Param("symbols") List<String> symbols);
+
     int insert(Universe u);
 
     int updateSector(@org.apache.ibatis.annotations.Param("symbol") String symbol,

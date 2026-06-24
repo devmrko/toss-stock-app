@@ -30,6 +30,9 @@ public interface DailyOhlcvMapper {
     /** 커버리지(minCoverage 종목 이상) 충분한 최신 거래일 기준 상승/전체. {REF_DATE, PREV_DATE, UP, TOTAL}. */
     Map<String, Object> breadth(@Param("minCoverage") int minCoverage);
 
+    /** 종목별 (fromDate 이후) 고점/저점 일괄. pairs=[{symbol, fromDate}...] → [{SYMBOL, MAXHIGH, MINLOW}]. */
+    List<Map<String, Object>> peakTroughBatch(@Param("pairs") List<Map<String, Object>> pairs);
+
     /** 종목의 fromDate 이후 최고가/최저가. {MAXHIGH, MINLOW}. */
     Map<String, Object> rangeSince(@Param("symbol") String symbol, @Param("fromDate") LocalDate fromDate);
 }

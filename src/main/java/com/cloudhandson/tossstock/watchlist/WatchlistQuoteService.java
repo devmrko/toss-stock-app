@@ -1,8 +1,10 @@
 package com.cloudhandson.tossstock.watchlist;
 
+import com.cloudhandson.tossstock.market.Universe;
 import com.cloudhandson.tossstock.market.UniverseMapper;
 import com.cloudhandson.tossstock.toss.CandleCache;
-import com.cloudhandson.tossstock.toss.TossApiClient;
+import com.cloudhandson.tossstock.toss.PriceCache;
+import com.cloudhandson.tossstock.toss.StockInfoCache;
 import com.cloudhandson.tossstock.toss.dto.TossCandle;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
 import com.cloudhandson.tossstock.toss.dto.TossStock;
@@ -31,14 +33,16 @@ public class WatchlistQuoteService {
     private static final int MAX_ROWS = 50;
 
     private final WatchlistMapper mapper;
-    private final TossApiClient toss;
+    private final PriceCache priceCache;
+    private final StockInfoCache stockInfoCache;
     private final CandleCache candleCache;
     private final UniverseMapper universeMapper;
 
-    public WatchlistQuoteService(WatchlistMapper mapper, TossApiClient toss, CandleCache candleCache,
-                                 UniverseMapper universeMapper) {
+    public WatchlistQuoteService(WatchlistMapper mapper, PriceCache priceCache, StockInfoCache stockInfoCache,
+                                 CandleCache candleCache, UniverseMapper universeMapper) {
         this.mapper = mapper;
-        this.toss = toss;
+        this.priceCache = priceCache;
+        this.stockInfoCache = stockInfoCache;
         this.candleCache = candleCache;
         this.universeMapper = universeMapper;
     }
@@ -50,15 +54,18 @@ public class WatchlistQuoteService {
         }
         List<String> symbols = rows.stream().map(Watchlist::getSymbol).distinct().toList();
 
-        Map<String, TossPrice> priceBySym = safe(() -> toss.getPrices(symbols)).stream()
+        Map<String, TossPrice> priceBySym = safe(() -> priceCache.get(symbols)).stream()
                 .collect(Collectors.toMap(TossPrice::symbol, Function.identity(), (a, b) -> a));
-        Map<String, TossStock> nameBySym = safe(() -> toss.getStocks(symbols)).stream()
+        Map<String, TossStock> nameBySym = safe(() -> stockInfoCache.get(symbols)).stream()
                 .collect(Collectors.toMap(TossStock::symbol, Function.identity(), (a, b) -> a));
+        Map<String, String> sectorBySym = universeMapper.sectorsForSymbols(symbols).stream()
+                .filter(u -> u.getSector() != null)
+                .collect(Collectors.toMap(Universe::getSymbol, Universe::getSector, (a, b) -> a));
 
         List<WatchlistQuote> quotes = new ArrayList<>();
         for (Watchlist r : rows) {
             String name = nameBySym.containsKey(r.getSymbol()) ? nameBySym.get(r.getSymbol()).name() : null;
-            String sector = safeSector(r.getSymbol());
+            String sector = sectorBySym.get(r.getSymbol());
             TossPrice price = priceBySym.get(r.getSymbol());
             try {
                 List<TossCandle> candles = candleCache.get(r.getSymbol());
@@ -81,14 +88,6 @@ public class WatchlistQuoteService {
             ranked.add(q.withRank(rank++));
         }
         return ranked;
-    }
-
-    private String safeSector(String symbol) {
-        try {
-            return universeMapper.findSectorBySymbol(symbol);
-        } catch (RuntimeException e) {
-            return null;
-        }
     }
 
     /** 순수 함수: 한 종목 행 + 등락률 계산. 외부 호출 없음(테스트 대상). */
