@@ -48,8 +48,7 @@
     .sidetag.BUY{background:#ffe3e3;color:#e03131;} .sidetag.SELL{background:#e7f1ff;color:#1971c2;}
     .qzero{color:#adb5bd;}
     .broker{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:#f1f3f5;color:#495057;margin-left:6px;}
-    .broker.bedit{cursor:pointer;} .broker.bedit:hover{outline:1px solid #ced4da;}
-    .broker.unset{background:transparent;color:#adb5bd;border:1px dashed #ced4da;}
+    .bsel{font-size:11px;padding:1px 4px;border-radius:6px;border:1px solid #ced4da;background:#fff;color:#495057;margin-left:4px;cursor:pointer;}
     .stoped{cursor:pointer;color:#868e96;font-size:11px;text-decoration:underline dotted;}
     .stoped:hover{color:var(--up);}
     .news-badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:6px;}
@@ -179,6 +178,17 @@
         try { await fetch('/api/brokers?name=' + encodeURIComponent(name), { method: 'POST' }); await loadBrokers(); } catch (e) {}
       }
     }
+    // 거래별 매매처 드롭다운
+    function brokerSelect(t) {
+      const cur = t.broker || '';
+      const inList = !cur || brokers.includes(cur);
+      const opts = ['<option value="">— 매매처 —</option>']
+        .concat(brokers.map(b => `<option ${b === cur ? 'selected' : ''}>${b}</option>`))
+        .concat(inList ? [] : [`<option selected>${cur}</option>`])
+        .concat(['<option value="__add__">+ 새 거래처…</option>'])
+        .join('');
+      return `<select class="bsel" data-id="${t.id}">${opts}</select>`;
+    }
 
     let lastRows = [];
     async function load() {
@@ -239,7 +249,7 @@
           <td class="actcell"><button class="bf" data-sym="${h.symbol}" data-from="${h.firstBuyAt ? h.firstBuyAt.slice(0, 10) : ''}" title="일봉 백필">↻</button><button class="exp" data-sym="${h.symbol}" title="거래내역">${open ? '▾' : '▸'}${h.trades.length}</button></td>
         </tr>`;
         const sub = open ? `<tr class="trades"><td colspan="16"><table class="tradetbl">${h.trades.map(t => `
-          <tr><td style="text-align:left"><span class="sidetag ${t.side}">${t.side === 'SELL' ? '매도' : '매수'}</span> <span class="broker bedit ${t.broker ? '' : 'unset'}" data-id="${t.id}" data-broker="${t.broker || ''}" title="매매처 수정">🏦 ${t.broker || '지정'}</span></td>
+          <tr><td style="text-align:left"><span class="sidetag ${t.side}">${t.side === 'SELL' ? '매도' : '매수'}</span> ${brokerSelect(t)}</td>
           <td class="num">${when(t.tradedAt)}</td>
           <td class="num">${n(t.price, 2)}</td>
           <td class="num">${t.quantity == null ? '<span class="dimv">-</span>' : fmt.format(t.quantity) + '주'}</td>
@@ -334,17 +344,6 @@
         await fetch('/api/holdings/' + del.dataset.id, { method: 'DELETE' });
         load(); return;
       }
-      const be = e.target.closest('.bedit');
-      if (be) {
-        const hint = brokers.length ? '\n등록: ' + brokers.join(', ') : '';
-        const v = prompt('이 거래의 매매처 (비우면 해제)' + hint, be.dataset.broker);
-        if (v == null) return;
-        const name = v.trim();
-        await registerBroker(name);
-        const res = await fetch('/api/holdings/' + be.dataset.id + '/broker?broker=' + encodeURIComponent(name), { method: 'PUT' });
-        if (!res.ok) { alert('매매처 수정 실패 (HTTP ' + res.status + ')'); return; }
-        load(); return;
-      }
       const st = e.target.closest('.stoped');
       if (st) {
         const cur = st.dataset.pct;
@@ -376,6 +375,22 @@
       }
     });
 
+    // 거래별 매매처 드롭다운 변경
+    $rows.addEventListener('change', async (e) => {
+      const sel = e.target.closest('.bsel');
+      if (!sel) return;
+      let val = sel.value;
+      if (val === '__add__') {
+        const name = (prompt('새 매매처 이름') || '').trim();
+        if (!name) { load(); return; }
+        await registerBroker(name);
+        val = name;
+      }
+      const res = await fetch('/api/holdings/' + sel.dataset.id + '/broker?broker=' + encodeURIComponent(val), { method: 'PUT' });
+      if (!res.ok) { alert('매매처 수정 실패 (HTTP ' + res.status + ')'); return; }
+      load();
+    });
+
     // 청산 필터 토글 → 즉시 다시 그림(재조회 없이)
     document.getElementById('showClosed').addEventListener('change', render);
 
@@ -387,7 +402,12 @@
 
     loadBrokers();
     load();
-    setInterval(load, 10000);
+    // 매매처 드롭다운 조작 중에는 주기 갱신 건너뜀(열린 select 닫힘 방지)
+    setInterval(() => {
+      const a = document.activeElement;
+      if (a && a.classList && a.classList.contains('bsel')) return;
+      load();
+    }, 10000);
   </script>
 </body>
 </html>
