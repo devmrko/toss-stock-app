@@ -42,6 +42,6 @@ Diátaxis + ADR + 설계서. 지도: `docs/README.md`.
 - 설계서 게이트(02→03), QA 게이트(04), Reviewer 게이트(06). 우회 금지, 반려 사유는 저널 노트.
 
 ## 7. 작업 환경
-- Gitea: https://gittea.cloud-handson.com/joungmin/toss-stock-app (branch `main`)
-- Redmine: https://redmine.cloud-handson.com/projects/toss-stock-app
-- 자격증명은 `.env` 에서 로드.
+- Git 호스트: `<GIT_HOST>/<org>/toss-stock-app` (branch `main`) — 예: Gitea/GitHub. URL·계정은 `.env`(`GITEA_URL` 등).
+- 이슈 트래커(Redmine): `<REDMINE_URL>/projects/toss-stock-app` — URL·키는 `.env`(`REDMINE_URL`, `REDMINE_API_KEY`).
+- 자격증명·호스트 주소는 모두 `.env` 에서 로드(하드코딩·커밋 금지).

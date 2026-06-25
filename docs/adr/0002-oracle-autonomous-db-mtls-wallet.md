@@ -3,7 +3,7 @@
 > 상태: Accepted · 날짜: 2026-06-22 · 관련: #409 · 대체: H2(뼈대 초기값)
 
 ## 맥락
-뼈대 초기엔 H2 인메모리를 썼으나, 운영 DB로 **Oracle Autonomous Database**(`Wallet_Q1VMFXPN6LHF72H5`, 서비스 `q1vmfxpn6lhf72h5_*`)를 사용하기로 결정. 실제 인스턴스는 **Oracle AI Database 26ai (23.26.2)** 로 확인됨.
+뼈대 초기엔 H2 인메모리를 썼으나, 운영 DB로 **Oracle Autonomous Database**(월렛 `Wallet_XXXX`, 서비스 `<oracle-service>_{tp|high|low}`; 실제 값은 `.env`)를 사용하기로 결정. 실제 인스턴스는 **Oracle AI Database 26ai (23.26.2)** 로 확인됨.
 
 ## 결정
 1. **메인 데이터소스 = Oracle ADB**, JDBC thin + SSO 월렛(`cwallet.sso`) 자동로그인.
