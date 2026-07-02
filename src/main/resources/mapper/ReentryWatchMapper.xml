@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cloudhandson.tossstock.reentry.ReentryWatchMapper">
+
+    <select id="findActive" resultType="com.cloudhandson.tossstock.reentry.ReentryWatch">
+        SELECT id, symbol, reference_price, stage1_pct, stage2_pct,
+               stage1_alerted_at, stage2_alerted_at, active, created_at
+        FROM reentry_watch
+        WHERE active = 1
+        ORDER BY id
+    </select>
+
+    <!-- Oracle IDENTITY 키 반환: keyColumn 명시 필수(미지정 시 ROWID 반환 → ORA-17132) -->
+    <insert id="insert" parameterType="com.cloudhandson.tossstock.reentry.ReentryWatch"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
+        INSERT INTO reentry_watch (symbol, reference_price, stage1_pct, stage2_pct, active, created_at)
+        VALUES (#{symbol}, #{referencePrice}, #{stage1Pct}, #{stage2Pct}, 1, CURRENT_TIMESTAMP)
+    </insert>
+
+    <update id="markStage1">
+        UPDATE reentry_watch SET stage1_alerted_at = #{at} WHERE id = #{id}
+    </update>
+
+    <update id="markStage2">
+        UPDATE reentry_watch SET stage2_alerted_at = #{at}, active = 0 WHERE id = #{id}
+    </update>
+
+</mapper>

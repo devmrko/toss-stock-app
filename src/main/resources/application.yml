@@ -48,6 +48,11 @@ briefing:
   open-cron: ${BRIEFING_OPEN_CRON:0 0 9 * * MON-FRI}
   close-cron: ${BRIEFING_CLOSE_CRON:0 30 15 * * MON-FRI}
 
+# 추적손절 재진입 알림 (docs/design/reentry-alert). webhook-url 없으면 비활성.
+reentry-alert:
+  webhook-url: ${DISCORD_WEBHOOK_URL:}
+  cron: ${REENTRY_ALERT_CRON:0 * 9-15 * * MON-FRI}
+
 logging:
   level:
     com.cloudhandson.tossstock: INFO
