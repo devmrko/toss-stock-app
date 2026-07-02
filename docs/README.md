@@ -20,6 +20,9 @@ docs/
   reference/         ← 레퍼런스: 구현된 모듈/함수/설정 사양 (구현 "후" 동기화)
   guides/            ← How-to / 사용 가이드 / 튜토리얼 (사용자·운영자 대상)
   pipeline/          ← 개발 프로세스 문서 (큐 프로토콜·런북)
+  journal/           ← 일일 투자 노트(날짜별 로그). reference/investment-principles.md 운용 기록
+    _TEMPLATE.md         일일 노트 템플릿
+    <YYYY-MM-DD>.md      날짜별 노트
 ```
 
 ## Diátaxis 사분면 매핑
