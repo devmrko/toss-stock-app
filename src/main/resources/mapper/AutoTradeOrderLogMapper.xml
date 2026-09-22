@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cloudhandson.tossstock.autotrade.AutoTradeOrderLogMapper">
+
+    <insert id="insert" parameterType="com.cloudhandson.tossstock.autotrade.AutoTradeOrderLog"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
+        INSERT INTO auto_trade_order_log
+            (symbol, side, reason, dry_run, requested_qty, requested_price, toss_order_id, success, message, created_at)
+        VALUES
+            (#{symbol}, #{side}, #{reason}, #{dryRun}, #{requestedQty}, #{requestedPrice},
+             #{tossOrderId}, #{success}, #{message}, CURRENT_TIMESTAMP)
+    </insert>
+
+</mapper>

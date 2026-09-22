@@ -1,0 +1,42 @@
+package com.cloudhandson.tossstock.autotrade;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+/** 자동매매 신호/주문 감사 로그(MyBatis 매핑). 설계: docs/design/808-auto-trade-engine/README.md §6 */
+public class AutoTradeOrderLog {
+    private Long id;
+    private String symbol;
+    private String side; // BUY / SELL
+    private String reason;
+    private boolean dryRun;
+    private BigDecimal requestedQty;
+    private BigDecimal requestedPrice;
+    private String tossOrderId;
+    private boolean success;
+    private String message;
+    private LocalDateTime createdAt;
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public String getSymbol() { return symbol; }
+    public void setSymbol(String symbol) { this.symbol = symbol; }
+    public String getSide() { return side; }
+    public void setSide(String side) { this.side = side; }
+    public String getReason() { return reason; }
+    public void setReason(String reason) { this.reason = reason; }
+    public boolean isDryRun() { return dryRun; }
+    public void setDryRun(boolean dryRun) { this.dryRun = dryRun; }
+    public BigDecimal getRequestedQty() { return requestedQty; }
+    public void setRequestedQty(BigDecimal requestedQty) { this.requestedQty = requestedQty; }
+    public BigDecimal getRequestedPrice() { return requestedPrice; }
+    public void setRequestedPrice(BigDecimal requestedPrice) { this.requestedPrice = requestedPrice; }
+    public String getTossOrderId() { return tossOrderId; }
+    public void setTossOrderId(String tossOrderId) { this.tossOrderId = tossOrderId; }
+    public boolean isSuccess() { return success; }
+    public void setSuccess(boolean success) { this.success = success; }
+    public String getMessage() { return message; }
+    public void setMessage(String message) { this.message = message; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+}

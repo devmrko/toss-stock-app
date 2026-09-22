@@ -38,4 +38,19 @@ public final class NewsSignals {
         }
         return out;
     }
+
+    /** 단일 sentiment CSV에서 특정 key(종목코드/섹터/MARKET)의 레벨만 추출. 없으면 null. */
+    public static String levelOf(String sentimentCsv, String key) {
+        if (sentimentCsv == null) {
+            return null;
+        }
+        for (String pair : sentimentCsv.split(",")) {
+            int i = pair.indexOf(':');
+            if (i > 0 && pair.substring(0, i).trim().equals(key)) {
+                String lv = pair.substring(i + 1).trim();
+                return lv.matches("S[1-5]") ? lv : null;
+            }
+        }
+        return null;
+    }
 }

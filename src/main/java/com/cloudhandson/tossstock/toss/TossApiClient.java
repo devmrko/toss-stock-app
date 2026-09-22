@@ -1,7 +1,10 @@
 package com.cloudhandson.tossstock.toss;
 
 import com.cloudhandson.tossstock.toss.dto.TossAccount;
+import com.cloudhandson.tossstock.toss.dto.TossBuyingPower;
 import com.cloudhandson.tossstock.toss.dto.TossCandle;
+import com.cloudhandson.tossstock.toss.dto.TossOrder;
+import com.cloudhandson.tossstock.toss.dto.TossOrderRequest;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
 import com.cloudhandson.tossstock.toss.dto.TossStock;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -131,5 +134,85 @@ public class TossApiClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record AccountsResponse(List<TossAccount> result) {
+    }
+
+    // ---- 계좌 식별 헤더(X-Tossinvest-Account) — accountSeq 사용(#802 실측으로 확정, accountNo 아님) ----
+
+    private String firstAccountSeq() {
+        List<TossAccount> accounts = getAccounts();
+        if (accounts.isEmpty()) {
+            throw new TossApiException("등록된 계좌가 없음", 0);
+        }
+        return String.valueOf(accounts.get(0).accountSeq());
+    }
+
+    /** 예수금(매수가능금액) — GET /api/v1/buying-power?currency=KRW|USD. 설계: docs/design/802-toss-buying-power/README.md */
+    public TossBuyingPower getBuyingPower(String currency) {
+        BuyingPowerResponse body = restClient.get()
+                .uri(uri -> uri.path("/api/v1/buying-power").queryParam("currency", currency).build())
+                .header("Authorization", "Bearer " + auth.getAccessToken())
+                .header("X-Tossinvest-Account", firstAccountSeq())
+                .retrieve()
+                .onStatus(s -> s.value() >= 400, (req, res) -> {
+                    throw new TossApiException("예수금 조회 실패: HTTP " + res.getStatusCode().value(),
+                            res.getStatusCode().value());
+                })
+                .body(BuyingPowerResponse.class);
+        return body == null ? null : body.result();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record BuyingPowerResponse(TossBuyingPower result) {
+    }
+
+    // ---- 주문(#808) — 스키마 미검증(문서 기반 추정). dryRun=false 전환 전 실제 호출로 재확인 필수. ----
+
+    /** 주문 접수 — POST /api/v1/orders. 설계: docs/design/808-auto-trade-engine/fn-order-executor.md */
+    public TossOrder placeOrder(TossOrderRequest req) {
+        OrderResponse body = restClient.post()
+                .uri("/api/v1/orders")
+                .header("Authorization", "Bearer " + auth.getAccessToken())
+                .header("X-Tossinvest-Account", firstAccountSeq())
+                .body(req)
+                .retrieve()
+                .onStatus(s -> s.value() >= 400, (r, res) -> {
+                    throw new TossApiException("주문 접수 실패: HTTP " + res.getStatusCode().value(),
+                            res.getStatusCode().value());
+                })
+                .body(OrderResponse.class);
+        return body == null ? null : body.result();
+    }
+
+    /** 주문 취소 — POST /api/v1/orders/{orderId}/cancel. */
+    public void cancelOrder(String orderId) {
+        restClient.post()
+                .uri("/api/v1/orders/{orderId}/cancel", orderId)
+                .header("Authorization", "Bearer " + auth.getAccessToken())
+                .header("X-Tossinvest-Account", firstAccountSeq())
+                .retrieve()
+                .onStatus(s -> s.value() >= 400, (r, res) -> {
+                    throw new TossApiException("주문 취소 실패: HTTP " + res.getStatusCode().value(),
+                            res.getStatusCode().value());
+                })
+                .toBodilessEntity();
+    }
+
+    /** 주문 상세 조회 — GET /api/v1/orders/{orderId}. */
+    public TossOrder getOrder(String orderId) {
+        OrderResponse body = restClient.get()
+                .uri("/api/v1/orders/{orderId}", orderId)
+                .header("Authorization", "Bearer " + auth.getAccessToken())
+                .header("X-Tossinvest-Account", firstAccountSeq())
+                .retrieve()
+                .onStatus(s -> s.value() >= 400, (r, res) -> {
+                    throw new TossApiException("주문 조회 실패: HTTP " + res.getStatusCode().value(),
+                            res.getStatusCode().value());
+                })
+                .body(OrderResponse.class);
+        return body == null ? null : body.result();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record OrderResponse(TossOrder result) {
     }
 }

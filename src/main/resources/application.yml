@@ -53,6 +53,23 @@ reentry-alert:
   webhook-url: ${DISCORD_WEBHOOK_URL:}
   cron: ${REENTRY_ALERT_CRON:0 * 9-15 * * MON-FRI}
 
+# 자동매매 엔진 (#808). dry-run 기본값 true — 반드시 명시적으로 false 로 바꿔야 실주문 나감.
+# DB auto_trade_state.dry_run 도 별도 존재(이중 안전장치, OrderExecutor#effectiveDryRun 참고).
+auto-trade:
+  dry-run: ${AUTO_TRADE_DRY_RUN:true}
+  total-budget: ${AUTO_TRADE_TOTAL_BUDGET:5000000}
+  max-symbols: ${AUTO_TRADE_MAX_SYMBOLS:5}
+  per-symbol-budget: ${AUTO_TRADE_PER_SYMBOL_BUDGET:1000000}
+  circuit-breaker-pct: ${AUTO_TRADE_CIRCUIT_BREAKER_PCT:15.0}
+  hard-stop-pct: ${AUTO_TRADE_HARD_STOP_PCT:10.0}
+  trail-stop-pct: ${AUTO_TRADE_TRAIL_STOP_PCT:10.0}
+  webhook-url: ${DISCORD_WEBHOOK_URL:}
+  cron: ${AUTO_TRADE_CRON:0 */5 9-15 * * MON-FRI}
+  gate:
+    min-breadth-pct: ${AUTO_TRADE_GATE_MIN_BREADTH:35}
+    max-s1-count: ${AUTO_TRADE_GATE_MAX_S1:1}
+    lookback-days: ${AUTO_TRADE_GATE_LOOKBACK_DAYS:3}
+
 logging:
   level:
     com.cloudhandson.tossstock: INFO

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cloudhandson.tossstock.autotrade.AutoTradeCandidateMapper">
+
+    <select id="findActive" resultType="com.cloudhandson.tossstock.autotrade.AutoTradeCandidate">
+        SELECT id, symbol, market, valuation_note, valuation_checked_at, active, created_at
+        FROM auto_trade_candidate
+        WHERE active = 1
+        ORDER BY id
+    </select>
+
+    <insert id="insert" parameterType="com.cloudhandson.tossstock.autotrade.AutoTradeCandidate"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
+        INSERT INTO auto_trade_candidate (symbol, market, valuation_note, valuation_checked_at, active, created_at)
+        VALUES (#{symbol}, #{market}, #{valuationNote}, #{valuationCheckedAt}, 1, CURRENT_TIMESTAMP)
+    </insert>
+
+</mapper>
