@@ -65,6 +65,11 @@ auto-trade:
   trail-stop-pct: ${AUTO_TRADE_TRAIL_STOP_PCT:10.0}
   webhook-url: ${DISCORD_WEBHOOK_URL:}
   cron: ${AUTO_TRADE_CRON:0 */5 9-15 * * MON-FRI}
+  # 인기(거래량 스파이크) 판정. 최초값 3.0배는 근거 없이 임의로 정한 것이었음(2026-09-25 지적) —
+  # 같은 날 실측(Meta 1.57x/Disney 0.97x/Lear 0.96x, 전부 진짜 호재였는데도 탈락)으로 대형주엔
+  # 너무 엄격함을 확인, 1.5로 낮춤. 이것도 확정값 아님 — 운영하며 계속 조정(docs/journal/auto-trade-screening.md 참고).
+  volume-spike-window-days: ${AUTO_TRADE_VOLUME_WINDOW_DAYS:20}
+  volume-spike-multiplier: ${AUTO_TRADE_VOLUME_MULTIPLIER:1.5}
   gate:
     min-breadth-pct: ${AUTO_TRADE_GATE_MIN_BREADTH:35}
     max-s1-count: ${AUTO_TRADE_GATE_MAX_S1:1}

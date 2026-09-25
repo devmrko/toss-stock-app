@@ -21,6 +21,8 @@ public record AutoTradeProperties(
         double trailStopPct,
         String webhookUrl,
         String cron,
+        int volumeSpikeWindowDays,
+        double volumeSpikeMultiplier,
         @NestedConfigurationProperty Gate gate) {
 
     public boolean alertsEnabled() {

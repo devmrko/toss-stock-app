@@ -27,8 +27,6 @@ import java.util.Map;
 public class AutoTradeScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(AutoTradeScheduler.class);
-    private static final int VOLUME_SPIKE_WINDOW = 20;
-    private static final double VOLUME_SPIKE_THRESHOLD = 3.0;
 
     private final AutoTradeProperties props;
     private final AutoTradeStateMapper stateMapper;
@@ -165,8 +163,8 @@ public class AutoTradeScheduler {
                 continue; // 호재(S4↑) 없음
             }
             List<DailyOhlcv> recent = dailyMapper.recentForSymbols(List.of(c.getSymbol()),
-                    LocalDate.now().minusDays(VOLUME_SPIKE_WINDOW + 10));
-            if (!PopularityChecker.isVolumeSpike(recent, VOLUME_SPIKE_WINDOW, VOLUME_SPIKE_THRESHOLD)) {
+                    LocalDate.now().minusDays(props.volumeSpikeWindowDays() + 10));
+            if (!PopularityChecker.isVolumeSpike(recent, props.volumeSpikeWindowDays(), props.volumeSpikeMultiplier())) {
                 continue; // 인기(거래량 스파이크) 없음
             }
             BigDecimal current = currentPrice(c.getSymbol());
