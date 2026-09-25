@@ -70,6 +70,17 @@ auto-trade:
   # 너무 엄격함을 확인, 1.5로 낮춤. 이것도 확정값 아님 — 운영하며 계속 조정(docs/journal/auto-trade-screening.md 참고).
   volume-spike-window-days: ${AUTO_TRADE_VOLUME_WINDOW_DAYS:20}
   volume-spike-multiplier: ${AUTO_TRADE_VOLUME_MULTIPLIER:1.5}
+  # 저평가 판정(#808 후속, 2026-09-25). 실시간 PER/PBR을 ValuationClient(네이버/야후, 비공식 API)로
+  # 조회해 둘 다 이 값 이하일 때만 통과. 해성디에스(PER 15.5~19.5/PBR 1.44~1.8)는 통과, 삼성전자
+  # (PBR 3.33)·AAPL(PER 38.6/PBR 45.6)은 탈락하는 수준으로 초기값 설정 — 역시 확정값 아님.
+  max-per: ${AUTO_TRADE_MAX_PER:20.0}
+  max-pbr: ${AUTO_TRADE_MAX_PBR:2.0}
+  # 원칙 §3 체크리스트 중 자동화 가능한 5항목(2026-09-25 추가, 사용자 지적으로 재점검 후 도입).
+  # "대부분 YES"이지 "전부 YES"는 아니므로 5개 중 min-fundamental-pass개 이상 통과를 요구.
+  max-debt-ratio: ${AUTO_TRADE_MAX_DEBT_RATIO:200.0}
+  min-avg-trading-value: ${AUTO_TRADE_MIN_AVG_TRADING_VALUE:500000000}
+  relative-strength-window-days: ${AUTO_TRADE_RS_WINDOW_DAYS:20}
+  min-fundamental-pass: ${AUTO_TRADE_MIN_FUNDAMENTAL_PASS:4}
   gate:
     min-breadth-pct: ${AUTO_TRADE_GATE_MIN_BREADTH:35}
     max-s1-count: ${AUTO_TRADE_GATE_MAX_S1:1}

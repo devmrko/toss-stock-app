@@ -36,13 +36,15 @@ public class AutoTradeScheduler {
     private final StockNewsMapper newsMapper;
     private final PriceCache priceCache;
     private final NewsFadeDetector newsFadeDetector;
+    private final ValuationClient valuationClient;
     private final OrderExecutor orderExecutor;
     private final DiscordClient discord;
 
     public AutoTradeScheduler(AutoTradeProperties props, AutoTradeStateMapper stateMapper,
                                AutoTradePositionMapper positionMapper, AutoTradeCandidateMapper candidateMapper,
                                DailyOhlcvMapper dailyMapper, StockNewsMapper newsMapper, PriceCache priceCache,
-                               NewsFadeDetector newsFadeDetector, OrderExecutor orderExecutor, DiscordClient discord) {
+                               NewsFadeDetector newsFadeDetector, ValuationClient valuationClient,
+                               OrderExecutor orderExecutor, DiscordClient discord) {
         this.props = props;
         this.stateMapper = stateMapper;
         this.positionMapper = positionMapper;
@@ -51,6 +53,7 @@ public class AutoTradeScheduler {
         this.newsMapper = newsMapper;
         this.priceCache = priceCache;
         this.newsFadeDetector = newsFadeDetector;
+        this.valuationClient = valuationClient;
         this.orderExecutor = orderExecutor;
         this.discord = discord;
     }
@@ -167,6 +170,14 @@ public class AutoTradeScheduler {
             if (!PopularityChecker.isVolumeSpike(recent, props.volumeSpikeWindowDays(), props.volumeSpikeMultiplier())) {
                 continue; // 인기(거래량 스파이크) 없음
             }
+            Valuation valuation = valuationClient.getValuation(c.getSymbol(), c.getMarket());
+            if (!ValuationChecker.isUndervalued(valuation, props.maxPer(), props.maxPbr())) {
+                continue; // 저평가 아님(또는 조회 실패 — fail-closed)
+            }
+            FundamentalScore score = fundamentalScore(c, recent);
+            if (!score.passes(props.minFundamentalPass())) {
+                continue; // 원칙 §3 체크리스트(실적/재무/자본배분/시장성/상대강도) "대부분 YES" 미달
+            }
             BigDecimal current = currentPrice(c.getSymbol());
             if (current == null) {
                 continue;
@@ -175,6 +186,27 @@ public class AutoTradeScheduler {
                 filled++;
             }
         }
+    }
+
+    /** 원칙 §3 체크리스트 중 자동화 가능한 5항목 채점. recentDays는 이미 조회된 인기(거래량) 판정용 목록 재사용. */
+    private FundamentalScore fundamentalScore(AutoTradeCandidate c, List<DailyOhlcv> recentDays) {
+        AnnualFinancials financials = valuationClient.getAnnualFinancials(c.getSymbol(), c.getMarket());
+        boolean earnings = EarningsQualityChecker.hasThreeYearUptrend(financials);
+        boolean balance = BalanceSheetChecker.isHealthy(financials, props.maxDebtRatio());
+        boolean capitalReturn = CapitalReturnChecker.paysDividend(financials);
+        boolean liquidity = LiquidityChecker.isLiquid(recentDays, props.minAvgTradingValue());
+
+        String indexSymbol = "US".equalsIgnoreCase(c.getMarket()) ? "SPY" : "069500";
+        List<DailyOhlcv> stockWindow = dailyMapper.recentForSymbols(List.of(c.getSymbol()),
+                LocalDate.now().minusDays(props.relativeStrengthWindowDays() + 10));
+        List<DailyOhlcv> indexWindow = dailyMapper.recentForSymbols(List.of(indexSymbol),
+                LocalDate.now().minusDays(props.relativeStrengthWindowDays() + 10));
+        Double stockReturn = RelativeStrengthChecker.pctReturn(stockWindow);
+        Double indexReturn = RelativeStrengthChecker.pctReturn(indexWindow);
+        boolean relativeStrength = stockReturn != null && indexReturn != null
+                && RelativeStrengthChecker.isRelativelyStrong(stockReturn, indexReturn);
+
+        return new FundamentalScore(earnings, balance, capitalReturn, liquidity, relativeStrength);
     }
 
     private BigDecimal currentPrice(String symbol) {

@@ -23,6 +23,12 @@ public record AutoTradeProperties(
         String cron,
         int volumeSpikeWindowDays,
         double volumeSpikeMultiplier,
+        double maxPer,
+        double maxPbr,
+        double maxDebtRatio,
+        BigDecimal minAvgTradingValue,
+        int relativeStrengthWindowDays,
+        int minFundamentalPass,
         @NestedConfigurationProperty Gate gate) {
 
     public boolean alertsEnabled() {
