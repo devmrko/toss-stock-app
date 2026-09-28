@@ -58,7 +58,7 @@ public class AutoTradeScheduler {
         this.discord = discord;
     }
 
-    @Scheduled(cron = "${auto-trade.cron:0 */5 9-15 * * MON-FRI}", zone = "Asia/Seoul")
+    @Scheduled(cron = "${auto-trade.cron:0 * * * * *}", zone = "Asia/Seoul")
     public void tick() {
         AutoTradeState state = stateMapper.find();
         if (state == null) {
@@ -91,6 +91,9 @@ public class AutoTradeScheduler {
     }
 
     private void processHolding(AutoTradePosition p) {
+        if (!MarketHours.isOpen(p.getMarket(), LocalDateTime.now())) {
+            return; // 그 시장이 닫혀있으면 가격이 안 움직이므로 스킵(불필요한 API 호출 방지)
+        }
         BigDecimal current = currentPrice(p.getSymbol());
         if (current == null) {
             return; // 콜드 캐시 — 다음 틱 재시도
@@ -161,6 +164,9 @@ public class AutoTradeScheduler {
             }
             if (holding.stream().anyMatch(h -> h.getSymbol().equals(c.getSymbol()))) {
                 continue; // 이미 보유 중
+            }
+            if (!MarketHours.isOpen(c.getMarket(), LocalDateTime.now())) {
+                continue; // 그 시장이 지금 닫혀있음(KST 기준, 한국/미국 각각 판단)
             }
             if (newsFadeDetector.hasNewsFaded(c.getSymbol())) {
                 continue; // 호재(S4↑) 없음
