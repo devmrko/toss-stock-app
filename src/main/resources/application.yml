@@ -31,9 +31,10 @@ toss:
   client-key: ${TOSS_CLIENT_KEY:}
   secret-key: ${TOSS_SECRET_KEY:}
 
-# 뉴스 S1-S5 분류 (#425)
+# 뉴스 S1-S5 분류 (#425). 미국 종목 피드 2개 추가(2026-09-25, #808 — 자동매매가
+# 미국 종목 호재를 원천적으로 못 보던 문제 해소. NewsClassifier가 티커로 인식).
 news:
-  feeds: ${NEWS_RSS_FEEDS:https://www.hankyung.com/feed/finance,https://www.yna.co.kr/rss/economy.xml}
+  feeds: ${NEWS_RSS_FEEDS:https://www.hankyung.com/feed/finance,https://www.yna.co.kr/rss/economy.xml,https://feeds.content.dowjones.io/public/rss/mw_topstories,https://www.cnbc.com/id/100003114/device/rss/rss.html}
   # LLM(OpenAI 호환): base-url + api-key + model 자유 지정. OPENROUTER_* 는 하위호환 폴백.
   llm-api-key: ${LLM_API_KEY:${OPENROUTER_API_KEY:}}
   llm-model: ${LLM_MODEL:${OPENROUTER_MODEL:gpt-4o-mini}}
@@ -57,19 +58,22 @@ reentry-alert:
 # DB auto_trade_state.dry_run 도 별도 존재(이중 안전장치, OrderExecutor#effectiveDryRun 참고).
 auto-trade:
   dry-run: ${AUTO_TRADE_DRY_RUN:true}
-  total-budget: ${AUTO_TRADE_TOTAL_BUDGET:5000000}
-  max-symbols: ${AUTO_TRADE_MAX_SYMBOLS:5}
-  per-symbol-budget: ${AUTO_TRADE_PER_SYMBOL_BUDGET:1000000}
+  # 2026-09-28: 실 입금액(400만원) 기준 재조정. 400만원을 5종목에 나누면 종목당 80만원이라
+  # 수수료·슬리피지 비중이 커지고 신호가 희석됨 — 원칙 §5 "핵심 2~5종목 집중"의 하한(2종목)으로
+  # 좁혀 2종목×200만원으로 조정.
+  total-budget: ${AUTO_TRADE_TOTAL_BUDGET:4000000}
+  max-symbols: ${AUTO_TRADE_MAX_SYMBOLS:2}
+  per-symbol-budget: ${AUTO_TRADE_PER_SYMBOL_BUDGET:2000000}
   circuit-breaker-pct: ${AUTO_TRADE_CIRCUIT_BREAKER_PCT:15.0}
   hard-stop-pct: ${AUTO_TRADE_HARD_STOP_PCT:10.0}
   trail-stop-pct: ${AUTO_TRADE_TRAIL_STOP_PCT:10.0}
   webhook-url: ${DISCORD_WEBHOOK_URL:}
   cron: ${AUTO_TRADE_CRON:0 */5 9-15 * * MON-FRI}
-  # 인기(거래량 스파이크) 판정. 최초값 3.0배는 근거 없이 임의로 정한 것이었음(2026-09-25 지적) —
-  # 같은 날 실측(Meta 1.57x/Disney 0.97x/Lear 0.96x, 전부 진짜 호재였는데도 탈락)으로 대형주엔
-  # 너무 엄격함을 확인, 1.5로 낮춤. 이것도 확정값 아님 — 운영하며 계속 조정(docs/journal/auto-trade-screening.md 참고).
+  # 인기(거래량 스파이크) 판정. 3.0→1.5(2026-09-25)에 이어 재조정 — 그 사이 실측 6건
+  # (Meta 1.57/Disney 0.97/Lear 0.96/AP위성 1.05/컴투스 <1)이 전부 1.5 근처~이하에 몰려있어,
+  # 진짜 호재도 "평소보다 뚜렷한" 수준(1.2배)이면 인기로 인정하는 쪽으로 완화. 확정값 아님.
   volume-spike-window-days: ${AUTO_TRADE_VOLUME_WINDOW_DAYS:20}
-  volume-spike-multiplier: ${AUTO_TRADE_VOLUME_MULTIPLIER:1.5}
+  volume-spike-multiplier: ${AUTO_TRADE_VOLUME_MULTIPLIER:1.2}
   # 저평가 판정(#808 후속, 2026-09-25). 실시간 PER/PBR을 ValuationClient(네이버/야후, 비공식 API)로
   # 조회해 둘 다 이 값 이하일 때만 통과. 해성디에스(PER 15.5~19.5/PBR 1.44~1.8)는 통과, 삼성전자
   # (PBR 3.33)·AAPL(PER 38.6/PBR 45.6)은 탈락하는 수준으로 초기값 설정 — 역시 확정값 아님.
@@ -77,10 +81,12 @@ auto-trade:
   max-pbr: ${AUTO_TRADE_MAX_PBR:2.0}
   # 원칙 §3 체크리스트 중 자동화 가능한 5항목(2026-09-25 추가, 사용자 지적으로 재점검 후 도입).
   # "대부분 YES"이지 "전부 YES"는 아니므로 5개 중 min-fundamental-pass개 이상 통과를 요구.
+  # 최초 4(80%)는 너무 빡빡하다는 지적(2026-09-25)으로 3(과반)으로 완화 — 명백한 결격(적자전환,
+  # 2년 연속 실적감소 같은) 하나만 있어도 못 넘도록 5개 중 최소 3은 유지.
   max-debt-ratio: ${AUTO_TRADE_MAX_DEBT_RATIO:200.0}
   min-avg-trading-value: ${AUTO_TRADE_MIN_AVG_TRADING_VALUE:500000000}
   relative-strength-window-days: ${AUTO_TRADE_RS_WINDOW_DAYS:20}
-  min-fundamental-pass: ${AUTO_TRADE_MIN_FUNDAMENTAL_PASS:4}
+  min-fundamental-pass: ${AUTO_TRADE_MIN_FUNDAMENTAL_PASS:3}
   gate:
     min-breadth-pct: ${AUTO_TRADE_GATE_MIN_BREADTH:35}
     max-s1-count: ${AUTO_TRADE_GATE_MAX_S1:1}

@@ -23,6 +23,11 @@
         SELECT symbol FROM universe WHERE name = #{name} FETCH FIRST 1 ROWS ONLY
     </select>
 
+    <select id="existsUsSymbol" parameterType="string" resultType="boolean">
+        SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END
+        FROM us_universe WHERE UPPER(symbol) = UPPER(#{symbol})
+    </select>
+
     <select id="findSectorBySymbol" parameterType="string" resultType="string">
         SELECT sector FROM universe WHERE symbol = #{symbol}
     </select>

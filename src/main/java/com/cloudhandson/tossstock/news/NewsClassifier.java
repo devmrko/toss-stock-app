@@ -34,18 +34,19 @@ public class NewsClassifier {
     private static final Set<String> SECTOR_SET = Set.of(SECTORS.split(","));
 
     private static final String SYSTEM = """
-            You classify a Korean stock-market news headline's likely market impact.
+            You classify a Korean or US stock-market news headline's likely market impact.
             Output STRICT JSON only, no prose, no markdown fences.
-            Schema: {"targets":[{"type":"SYMBOL|SECTOR|MARKET","name":"<상장사명 or 섹터 or MARKET>","level":"S1|S2|S3|S4|S5"}],"kind":"EVENT|SPECULATION","analysis":"<한국어 1~2문장>"}
+            Schema: {"targets":[{"type":"SYMBOL|SECTOR|MARKET","name":"<상장사명/티커 or 섹터 or MARKET>","level":"S1|S2|S3|S4|S5"}],"kind":"EVENT|SPECULATION","analysis":"<한국어 1~2문장>"}
             Levels(방향): S1 강한 악재, S2 약한 악재, S3 중립/무관, S4 약한 호재, S5 강한 호재.
-            type=SYMBOL: 특정 상장사 뉴스. name 은 정확한 한국 상장사명(예: 삼성전자, SK하이닉스).
+            type=SYMBOL: 특정 상장사 뉴스. 한국 종목은 정확한 한국 상장사명(예: 삼성전자, SK하이닉스),
+              미국 종목은 정확한 티커 심볼(예: AAPL, TSLA, META — 회사명 아님, 반드시 티커로).
             type=SECTOR: 업종 전반 뉴스. name 은 다음 중 하나: %s
-            type=MARKET: 거시/지수/전체장(예: Fed, 환율, 코스피 급락).
+            type=MARKET: 거시/지수/전체장(예: Fed, 환율, 코스피 급락, S&P500).
             한 기사에 여러 타겟 가능(종목+섹터+시장 동시). 가장 정확한 단위를 고른다.
             kind=EVENT: 실제 사실/이벤트(실적, 수주, 규제, 인수합병, 신제품, 공급계약, 소송).
             kind=SPECULATION: 전망/예측/차트분석/의견.
             주식과 무관하면 targets 에 MARKET S3 하나만.
-            analysis 는 반드시 한국어로 무엇이 왜 호재/악재인지.
+            analysis 는 반드시 한국어로 무엇이 왜 호재/악재인지(영문 기사여도 한국어로).
             """.formatted(SECTORS);
 
     private final NewsProperties props;
@@ -129,7 +130,7 @@ public class NewsClassifier {
         for (Target t : p.targets()) {
             String level = normLevel(t.level());
             String key = switch (t.type()) {
-                case "SYMBOL" -> universeMapper.findCodeByName(t.name());        // 없으면 null → 드롭
+                case "SYMBOL" -> resolveSymbol(t.name());        // 없으면 null → 드롭
                 case "SECTOR" -> SECTOR_SET.contains(t.name()) ? t.name() : null;
                 case "MARKET" -> "MARKET";
                 default -> null;
@@ -146,6 +147,16 @@ public class NewsClassifier {
                 .map(e -> e.getKey() + ":" + e.getValue()).reduce((a, b) -> a + "," + b).orElse("");
         int maxStrength = keyToLevel.values().stream().mapToInt(NewsClassifier::strength).max().orElse(0);
         return new ClassifyResult(targetsCsv, sentimentCsv, p.kind(), p.analysis(), maxStrength);
+    }
+
+    /** 한국 상장사명 → 6자리 코드 우선 시도, 없으면 미국 티커로 간주해 us_universe 실존 확인. */
+    private String resolveSymbol(String name) {
+        String kr = universeMapper.findCodeByName(name);
+        if (kr != null) {
+            return kr;
+        }
+        String ticker = name.trim().toUpperCase();
+        return universeMapper.existsUsSymbol(ticker) ? ticker : null;
     }
 
     private static String normLevel(String lv) {

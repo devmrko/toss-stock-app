@@ -15,6 +15,9 @@ public interface UniverseMapper {
     /** 상장사명 → 6자리 코드(정확 일치). 없으면 null. */
     String findCodeByName(@org.apache.ibatis.annotations.Param("name") String name);
 
+    /** us_universe에 해당 티커가 실존하는지(대소문자 무관). #808 미국 뉴스 분류용. */
+    boolean existsUsSymbol(@org.apache.ibatis.annotations.Param("symbol") String symbol);
+
     /** 6자리 코드 → 섹터. 없으면 null. */
     String findSectorBySymbol(@org.apache.ibatis.annotations.Param("symbol") String symbol);
 
