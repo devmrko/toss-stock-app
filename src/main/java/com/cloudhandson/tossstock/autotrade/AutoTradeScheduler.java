@@ -37,6 +37,7 @@ public class AutoTradeScheduler {
     private final PriceCache priceCache;
     private final NewsFadeDetector newsFadeDetector;
     private final ValuationClient valuationClient;
+    private final CapitalReturnCatalystDetector capitalReturnCatalystDetector;
     private final OrderExecutor orderExecutor;
     private final DiscordClient discord;
 
@@ -44,6 +45,7 @@ public class AutoTradeScheduler {
                                AutoTradePositionMapper positionMapper, AutoTradeCandidateMapper candidateMapper,
                                DailyOhlcvMapper dailyMapper, StockNewsMapper newsMapper, PriceCache priceCache,
                                NewsFadeDetector newsFadeDetector, ValuationClient valuationClient,
+                               CapitalReturnCatalystDetector capitalReturnCatalystDetector,
                                OrderExecutor orderExecutor, DiscordClient discord) {
         this.props = props;
         this.stateMapper = stateMapper;
@@ -54,6 +56,7 @@ public class AutoTradeScheduler {
         this.priceCache = priceCache;
         this.newsFadeDetector = newsFadeDetector;
         this.valuationClient = valuationClient;
+        this.capitalReturnCatalystDetector = capitalReturnCatalystDetector;
         this.orderExecutor = orderExecutor;
         this.discord = discord;
     }
@@ -177,8 +180,10 @@ public class AutoTradeScheduler {
                 continue; // 인기(거래량 스파이크) 없음
             }
             Valuation valuation = valuationClient.getValuation(c.getSymbol(), c.getMarket());
-            if (!ValuationChecker.isUndervalued(valuation, props.maxPer(), props.maxPbr())) {
-                continue; // 저평가 아님(또는 조회 실패 — fail-closed)
+            boolean cheap = ValuationChecker.isUndervalued(valuation, props.maxPer(), props.maxPbr());
+            boolean rerateCatalyst = capitalReturnCatalystDetector.hasRecentCatalyst(c.getSymbol());
+            if (!cheap && !rerateCatalyst) {
+                continue; // 이미 싼 것도 아니고, 자본배분(재평가) 촉매도 없음 — 원칙 §2/§3-7 둘 다 미달
             }
             FundamentalScore score = fundamentalScore(c, recent);
             if (!score.passes(props.minFundamentalPass())) {
