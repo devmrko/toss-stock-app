@@ -180,8 +180,8 @@ public class AutoTradeScheduler {
             }
             List<DailyOhlcv> recent = dailyMapper.recentForSymbols(List.of(c.getSymbol()),
                     LocalDate.now().minusDays(props.volumeSpikeWindowDays() + 10));
-            if (!PopularityChecker.isVolumeSpike(recent, props.volumeSpikeWindowDays(), props.volumeSpikeMultiplier())) {
-                continue; // 인기(거래량 스파이크) 없음
+            if (!PopularityChecker.isPopular(recent, props.volumeSpikeWindowDays(), props.volumeSpikeMultiplier(), props.priceMovePct())) {
+                continue; // 인기 없음(거래량 스파이크도, 당일 가격 반응도 없음)
             }
             Valuation valuation = valuationClient.getValuation(c.getSymbol(), c.getMarket());
             boolean cheap = ValuationChecker.isUndervalued(valuation, props.maxPer(), props.maxPbr());

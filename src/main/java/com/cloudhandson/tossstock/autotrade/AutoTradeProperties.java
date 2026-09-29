@@ -23,6 +23,7 @@ public record AutoTradeProperties(
         String cron,
         int volumeSpikeWindowDays,
         double volumeSpikeMultiplier,
+        double priceMovePct,
         double maxPer,
         double maxPbr,
         double maxDebtRatio,
