@@ -80,7 +80,9 @@ class OrderExecutorTest {
                 new AutoTradeProperties.Gate(35, 1, 3));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(false));
-        when(toss.placeOrder(any())).thenReturn(new TossOrder("ORD1", "005930", "BUY", "FILLED", "20", "50000"));
+        TossOrder.Execution exec = new TossOrder.Execution("20", "50000", "1000000", "0", "0", null, null);
+        when(toss.placeOrder(any())).thenReturn(new TossOrder("ORD1", "005930", "BUY", "MARKET", "FILLED",
+                null, "20", "1000000", "KRW", null, null, exec));
 
         boolean ok = liveExecutor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000));
 

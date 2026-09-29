@@ -1,9 +1,8 @@
 package com.cloudhandson.tossstock.toss.dto;
 
 /**
- * POST /api/v1/orders 요청 바디(추정 스키마 — 실제 필드명 미검증).
+ * POST /api/v1/orders 요청 바디 — 2026-09-29 해성디에스(195870) 1주 매수/매도 실주문으로 실측 검증 완료.
  * 설계: docs/design/808-auto-trade-engine/fn-order-executor.md §4
- * 주의(전역 규칙): dryRun=false 전환 전 실제 호출로 필드명 재확인 필수.
  */
 public record TossOrderRequest(String symbol, String side, String orderType,
                                 String quantity, String price, String currency) {

@@ -165,7 +165,7 @@ public class TossApiClient {
     record BuyingPowerResponse(TossBuyingPower result) {
     }
 
-    // ---- 주문(#808) — 스키마 미검증(문서 기반 추정). dryRun=false 전환 전 실제 호출로 재확인 필수. ----
+    // ---- 주문(#808) — 2026-09-29 해성디에스(195870) 1주 매수/매도 실주문으로 스키마 검증 완료. ----
 
     /** 주문 접수 — POST /api/v1/orders. 설계: docs/design/808-auto-trade-engine/fn-order-executor.md */
     public TossOrder placeOrder(TossOrderRequest req) {

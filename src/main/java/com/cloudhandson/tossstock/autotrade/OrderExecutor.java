@@ -62,11 +62,13 @@ public class OrderExecutor {
         String tossOrderId = null;
         boolean success = true;
         String message = dryRun ? "드라이런 — 실주문 안 함" : "실주문 체결";
+        BigDecimal filledPrice = currentPrice; // 드라이런은 견적가 그대로, 실주문은 아래서 체결가로 교체
         if (!dryRun) {
             try {
                 TossOrder order = toss.placeOrder(TossOrderRequest.marketBuy(symbol, qty.toPlainString(),
                         "US".equals(market) ? "USD" : "KRW"));
                 tossOrderId = order == null ? null : order.orderId();
+                filledPrice = actualFilledPrice(order, currentPrice);
             } catch (RuntimeException e) {
                 success = false;
                 message = "주문 실패: " + e.getMessage();
@@ -74,7 +76,7 @@ public class OrderExecutor {
             }
         }
 
-        saveLog(symbol, "BUY", "BUY_SIGNAL", dryRun, qty, currentPrice, tossOrderId, success, message);
+        saveLog(symbol, "BUY", "BUY_SIGNAL", dryRun, qty, filledPrice, tossOrderId, success, message);
         if (!success) {
             notify("⚠️ " + symbol + " 매수 실패 — " + message);
             return false;
@@ -83,15 +85,15 @@ public class OrderExecutor {
         AutoTradePosition position = new AutoTradePosition();
         position.setSymbol(symbol);
         position.setMarket(market);
-        position.setEntryPrice(currentPrice);
+        position.setEntryPrice(filledPrice);
         position.setEntryQty(qty);
         position.setEntryAt(LocalDateTime.now());
-        position.setPeakPrice(currentPrice);
+        position.setPeakPrice(filledPrice);
         position.setBudgetAllocated(budget);
         position.setDryRun(dryRun);
         positionMapper.insert(position);
 
-        notify((dryRun ? "🧪[드라이런] " : "✅ ") + symbol + " 매수 — 수량 " + qty + ", 가격 " + currentPrice
+        notify((dryRun ? "🧪[드라이런] " : "✅ ") + symbol + " 매수 — 수량 " + qty + ", 가격 " + filledPrice
                 + ", 배정예산 " + budget);
         return true;
     }
@@ -101,11 +103,13 @@ public class OrderExecutor {
         String tossOrderId = null;
         boolean success = true;
         String message = dryRun ? "드라이런 — 실주문 안 함" : "실주문 체결";
+        BigDecimal filledPrice = currentPrice;
         if (!dryRun) {
             try {
                 TossOrder order = toss.placeOrder(TossOrderRequest.marketSell(position.getSymbol(),
                         position.getEntryQty().toPlainString(), "US".equals(position.getMarket()) ? "USD" : "KRW"));
                 tossOrderId = order == null ? null : order.orderId();
+                filledPrice = actualFilledPrice(order, currentPrice);
             } catch (RuntimeException e) {
                 success = false;
                 message = "주문 실패: " + e.getMessage();
@@ -113,20 +117,32 @@ public class OrderExecutor {
             }
         }
 
-        saveLog(position.getSymbol(), "SELL", reason.name(), dryRun, position.getEntryQty(), currentPrice,
+        saveLog(position.getSymbol(), "SELL", reason.name(), dryRun, position.getEntryQty(), filledPrice,
                 tossOrderId, success, message);
         if (!success) {
             notify("⚠️ " + position.getSymbol() + " 매도 실패 — " + message);
             return false;
         }
 
-        positionMapper.markExited(position.getId(), currentPrice, reason.name(), LocalDateTime.now());
+        positionMapper.markExited(position.getId(), filledPrice, reason.name(), LocalDateTime.now());
 
-        double pnlPct = currentPrice.subtract(position.getEntryPrice())
+        double pnlPct = filledPrice.subtract(position.getEntryPrice())
                 .divide(position.getEntryPrice(), java.math.MathContext.DECIMAL64).doubleValue() * 100;
         notify((dryRun ? "🧪[드라이런] " : "✅ ") + position.getSymbol() + " 매도(" + reason + ") — 가격 "
-                + currentPrice + ", 손익 " + String.format("%.2f", pnlPct) + "%");
+                + filledPrice + ", 손익 " + String.format("%.2f", pnlPct) + "%");
         return true;
+    }
+
+    /** 실주문 체결가(execution.averageFilledPrice) 사용, 없으면 견적가로 폴백. */
+    private static BigDecimal actualFilledPrice(TossOrder order, BigDecimal fallback) {
+        if (order == null || order.execution() == null || order.execution().averageFilledPrice() == null) {
+            return fallback;
+        }
+        try {
+            return new BigDecimal(order.execution().averageFilledPrice());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     private void saveLog(String symbol, String side, String reason, boolean dryRun, BigDecimal qty,

@@ -57,7 +57,7 @@ OrderResult sell(Long positionId, String reason)
 - O(1) DB/HTTP 호출. 틱당 최대 5회(포지션 수) 이내.
 
 ## 9. 의존성
-- `TossApiClient.placeOrder`(신규, Developer 단계 실제 스펙 재검증 필수).
+- `TossApiClient.placeOrder`(2026-09-29 실주문 왕복으로 스펙 검증 완료).
 - `AutoTradePositionMapper`, `AutoTradeOrderLogMapper`, `AutoTradeStateMapper`(신규 MyBatis 매퍼).
 - `DiscordClient`(기존 재사용).
 - `application.yml`의 `auto-trade.dry-run`, `auto-trade.per-symbol-budget`.
