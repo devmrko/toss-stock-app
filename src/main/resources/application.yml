@@ -58,12 +58,13 @@ reentry-alert:
 # DB auto_trade_state.dry_run 도 별도 존재(이중 안전장치, OrderExecutor#effectiveDryRun 참고).
 auto-trade:
   dry-run: ${AUTO_TRADE_DRY_RUN:true}
-  # 2026-09-28: 실 입금액(400만원) 기준 재조정. 400만원을 5종목에 나누면 종목당 80만원이라
-  # 수수료·슬리피지 비중이 커지고 신호가 희석됨 — 원칙 §5 "핵심 2~5종목 집중"의 하한(2종목)으로
-  # 좁혀 2종목×200만원으로 조정.
+  # 2026-09-28: 실 입금액(400만원) 확인, 2종목×200만원으로 좁힘(원칙 §5 하한).
+  # 2026-09-29: 재조정 — 지금은 시스템 만든 지 얼마 안 돼 검증 단계라, 수익 극대화보다
+  # 표본 확보가 우선. 왕복비용이 비율기반(136원/6만원≈0.23%)이라 소액도 불리하지 않음.
+  # 검증되면 다시 §5대로 2~5종목 집중+금액 확대로 되돌릴 예정.
   total-budget: ${AUTO_TRADE_TOTAL_BUDGET:4000000}
-  max-symbols: ${AUTO_TRADE_MAX_SYMBOLS:2}
-  per-symbol-budget: ${AUTO_TRADE_PER_SYMBOL_BUDGET:2000000}
+  max-symbols: ${AUTO_TRADE_MAX_SYMBOLS:5}
+  per-symbol-budget: ${AUTO_TRADE_PER_SYMBOL_BUDGET:800000}
   circuit-breaker-pct: ${AUTO_TRADE_CIRCUIT_BREAKER_PCT:15.0}
   hard-stop-pct: ${AUTO_TRADE_HARD_STOP_PCT:10.0}
   trail-stop-pct: ${AUTO_TRADE_TRAIL_STOP_PCT:10.0}
