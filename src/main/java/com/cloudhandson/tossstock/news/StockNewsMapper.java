@@ -26,5 +26,8 @@ public interface StockNewsMapper {
     /** 활성(미만료) 신호들의 sentiment CSV 목록 (뱃지 집계용). */
     List<String> activeSentiments();
 
+    /** 최근 N일간 해당 섹터의 EVENT+호재(S4/S5) 누적 건수(만료 여부 무관) — 거시 트렌드 참고용(게이트 아님). */
+    int countSectorHotEvents(@Param("sector") String sector, @Param("since") LocalDateTime since);
+
     int expireOld();
 }

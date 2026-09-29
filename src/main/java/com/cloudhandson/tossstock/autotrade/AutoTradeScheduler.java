@@ -3,6 +3,7 @@ package com.cloudhandson.tossstock.autotrade;
 import com.cloudhandson.tossstock.briefing.DiscordClient;
 import com.cloudhandson.tossstock.market.DailyOhlcv;
 import com.cloudhandson.tossstock.market.DailyOhlcvMapper;
+import com.cloudhandson.tossstock.market.UniverseMapper;
 import com.cloudhandson.tossstock.news.NewsSignals;
 import com.cloudhandson.tossstock.news.StockNews;
 import com.cloudhandson.tossstock.news.StockNewsMapper;
@@ -38,6 +39,7 @@ public class AutoTradeScheduler {
     private final NewsFadeDetector newsFadeDetector;
     private final ValuationClient valuationClient;
     private final CapitalReturnCatalystDetector capitalReturnCatalystDetector;
+    private final UniverseMapper universeMapper;
     private final OrderExecutor orderExecutor;
     private final DiscordClient discord;
 
@@ -46,6 +48,7 @@ public class AutoTradeScheduler {
                                DailyOhlcvMapper dailyMapper, StockNewsMapper newsMapper, PriceCache priceCache,
                                NewsFadeDetector newsFadeDetector, ValuationClient valuationClient,
                                CapitalReturnCatalystDetector capitalReturnCatalystDetector,
+                               UniverseMapper universeMapper,
                                OrderExecutor orderExecutor, DiscordClient discord) {
         this.props = props;
         this.stateMapper = stateMapper;
@@ -57,6 +60,7 @@ public class AutoTradeScheduler {
         this.newsFadeDetector = newsFadeDetector;
         this.valuationClient = valuationClient;
         this.capitalReturnCatalystDetector = capitalReturnCatalystDetector;
+        this.universeMapper = universeMapper;
         this.orderExecutor = orderExecutor;
         this.discord = discord;
     }
@@ -195,6 +199,7 @@ public class AutoTradeScheduler {
             }
             if (orderExecutor.buy(c.getSymbol(), c.getMarket(), props.perSymbolBudget(), current)) {
                 filled++;
+                notifyMacroContext(c); // 매수 게이트에는 안 넣음 — 참고용 거시 맥락만 별도 안내(2026-09-29)
             }
         }
     }
@@ -218,6 +223,40 @@ public class AutoTradeScheduler {
                 && RelativeStrengthChecker.isRelativelyStrong(stockReturn, indexReturn);
 
         return new FundamentalScore(earnings, balance, capitalReturn, liquidity, relativeStrength);
+    }
+
+    /**
+     * 거시 맥락 참고 정보(2026-09-29) — 매수 게이트가 아니라 사후 안내용. 섹터 최근 90일 호재
+     * 누적건수(뉴스 attention 트렌드) + 분기(60일)·연(252일) 상대강도. KR만 지원(섹터/지수 데이터 한계).
+     */
+    private void notifyMacroContext(AutoTradeCandidate c) {
+        if (!"KR".equalsIgnoreCase(c.getMarket())) {
+            return;
+        }
+        String sector = universeMapper.findSectorBySymbol(c.getSymbol());
+        if (sector == null) {
+            return;
+        }
+        int hotCount90d = newsMapper.countSectorHotEvents(sector, LocalDateTime.now().minusDays(90));
+
+        List<DailyOhlcv> stock60d = dailyMapper.recentForSymbols(List.of(c.getSymbol()), LocalDate.now().minusDays(70));
+        List<DailyOhlcv> index60d = dailyMapper.recentForSymbols(List.of("069500"), LocalDate.now().minusDays(70));
+        List<DailyOhlcv> stock252d = dailyMapper.recentForSymbols(List.of(c.getSymbol()), LocalDate.now().minusDays(262));
+        List<DailyOhlcv> index252d = dailyMapper.recentForSymbols(List.of("069500"), LocalDate.now().minusDays(262));
+        Double q = diffOrNull(RelativeStrengthChecker.pctReturn(stock60d), RelativeStrengthChecker.pctReturn(index60d));
+        Double y = diffOrNull(RelativeStrengthChecker.pctReturn(stock252d), RelativeStrengthChecker.pctReturn(index252d));
+
+        String msg = String.format(
+                "📊 %s 거시 맥락(참고용, 매수판단엔 미반영) — 섹터(%s) 최근90일 호재 %d건, "
+                        + "분기 상대강도 %s, 연간 상대강도 %s",
+                c.getSymbol(), sector, hotCount90d,
+                q == null ? "데이터부족" : String.format("%+.1f%%p", q),
+                y == null ? "데이터부족" : String.format("%+.1f%%p", y));
+        notify(msg);
+    }
+
+    private static Double diffOrNull(Double stockReturn, Double indexReturn) {
+        return (stockReturn == null || indexReturn == null) ? null : stockReturn - indexReturn;
     }
 
     private BigDecimal currentPrice(String symbol) {

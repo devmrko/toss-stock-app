@@ -65,6 +65,12 @@
         ORDER BY COALESCE(published_at, fetched_at) DESC
     </select>
 
+    <select id="countSectorHotEvents" resultType="int">
+        SELECT COUNT(*) FROM stock_news
+        WHERE kind = 'EVENT' AND fetched_at &gt;= #{since}
+          AND (sentiment LIKE '%' || #{sector} || ':S4%' OR sentiment LIKE '%' || #{sector} || ':S5%')
+    </select>
+
     <update id="expireOld">
         UPDATE stock_news SET status = 'EXPIRED'
         WHERE status = 'ANALYZED' AND expires_at &lt;= SYSTIMESTAMP
