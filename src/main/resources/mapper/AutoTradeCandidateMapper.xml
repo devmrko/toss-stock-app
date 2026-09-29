@@ -16,4 +16,13 @@
         VALUES (#{symbol}, #{market}, #{valuationNote}, #{valuationCheckedAt}, 1, CURRENT_TIMESTAMP)
     </insert>
 
+    <select id="existsActive" resultType="boolean">
+        SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END
+        FROM auto_trade_candidate WHERE symbol = #{symbol} AND active = 1
+    </select>
+
+    <update id="deactivate">
+        UPDATE auto_trade_candidate SET active = 0 WHERE symbol = #{symbol} AND active = 1
+    </update>
+
 </mapper>

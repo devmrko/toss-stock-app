@@ -71,6 +71,14 @@
           AND (sentiment LIKE '%' || #{sector} || ':S4%' OR sentiment LIKE '%' || #{sector} || ':S5%')
     </select>
 
+    <select id="findRecentEvents" resultMap="newsMap">
+        SELECT id, ext_id, title, url, source, published_at, fetched_at, status,
+               targets, sentiment, rationale, kind, model, expires_at
+        FROM stock_news
+        WHERE kind = 'EVENT' AND fetched_at &gt;= #{since}
+          AND (sentiment LIKE '%S4%' OR sentiment LIKE '%S5%')
+    </select>
+
     <update id="expireOld">
         UPDATE stock_news SET status = 'EXPIRED'
         WHERE status = 'ANALYZED' AND expires_at &lt;= SYSTIMESTAMP

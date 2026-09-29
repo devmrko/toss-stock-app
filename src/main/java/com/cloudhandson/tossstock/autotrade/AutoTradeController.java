@@ -16,13 +16,16 @@ import java.util.Map;
 public class AutoTradeController {
 
     private final AutoTradeScheduler scheduler;
+    private final CandidateDiscoveryService discoveryService;
     private final AutoTradeStateMapper stateMapper;
     private final AutoTradePositionMapper positionMapper;
     private final AutoTradeCandidateMapper candidateMapper;
 
-    public AutoTradeController(AutoTradeScheduler scheduler, AutoTradeStateMapper stateMapper,
-                                AutoTradePositionMapper positionMapper, AutoTradeCandidateMapper candidateMapper) {
+    public AutoTradeController(AutoTradeScheduler scheduler, CandidateDiscoveryService discoveryService,
+                                AutoTradeStateMapper stateMapper, AutoTradePositionMapper positionMapper,
+                                AutoTradeCandidateMapper candidateMapper) {
         this.scheduler = scheduler;
+        this.discoveryService = discoveryService;
         this.stateMapper = stateMapper;
         this.positionMapper = positionMapper;
         this.candidateMapper = candidateMapper;
@@ -32,6 +35,13 @@ public class AutoTradeController {
     @PostMapping("/tick")
     public ResponseEntity<Map<String, Object>> tick() {
         scheduler.tick();
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(status());
+    }
+
+    /** 후보 자동등록/자동해제 강제 1회 실행(운영 확인용). */
+    @PostMapping("/discover")
+    public ResponseEntity<Map<String, Object>> discover() {
+        discoveryService.refresh();
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(status());
     }
 

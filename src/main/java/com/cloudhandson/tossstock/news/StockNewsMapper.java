@@ -29,5 +29,8 @@ public interface StockNewsMapper {
     /** 최근 N일간 해당 섹터의 EVENT+호재(S4/S5) 누적 건수(만료 여부 무관) — 거시 트렌드 참고용(게이트 아님). */
     int countSectorHotEvents(@Param("sector") String sector, @Param("since") LocalDateTime since);
 
+    /** 최근 since 이후 EVENT 뉴스(만료 여부 무관) — 자동 후보 발굴용(#808 2026-09-29). */
+    List<StockNews> findRecentEvents(@Param("since") LocalDateTime since);
+
     int expireOld();
 }
