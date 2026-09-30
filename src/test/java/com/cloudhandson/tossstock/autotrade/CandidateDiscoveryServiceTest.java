@@ -1,5 +1,6 @@
 package com.cloudhandson.tossstock.autotrade;
 
+import com.cloudhandson.tossstock.market.DailyCollector;
 import com.cloudhandson.tossstock.market.UniverseMapper;
 import com.cloudhandson.tossstock.news.StockNews;
 import com.cloudhandson.tossstock.news.StockNewsMapper;
@@ -20,6 +21,7 @@ class CandidateDiscoveryServiceTest {
     private AutoTradeCandidateMapper candidateMapper;
     private UniverseMapper universeMapper;
     private NewsFadeDetector newsFadeDetector;
+    private DailyCollector dailyCollector;
     private CandidateDiscoveryService service;
 
     @BeforeEach
@@ -28,7 +30,9 @@ class CandidateDiscoveryServiceTest {
         candidateMapper = mock(AutoTradeCandidateMapper.class);
         universeMapper = mock(UniverseMapper.class);
         newsFadeDetector = mock(NewsFadeDetector.class);
-        service = new CandidateDiscoveryService(newsMapper, candidateMapper, universeMapper, newsFadeDetector);
+        dailyCollector = mock(DailyCollector.class);
+        service = new CandidateDiscoveryService(newsMapper, candidateMapper, universeMapper, newsFadeDetector,
+                dailyCollector);
         when(candidateMapper.findActive()).thenReturn(List.of());
     }
 
@@ -52,6 +56,18 @@ class CandidateDiscoveryServiceTest {
     }
 
     @Test
+    void kr_symbol_registration_does_not_trigger_backfill() {
+        // KR은 DailyCollector 정기 전종목 스캔이 이미 커버 — 후보 등록 때 중복 백필 불필요.
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("009150,전자부품", "009150:S5,전자부품:S4", "삼성전기 기판 증설")));
+        when(candidateMapper.existsActive("009150")).thenReturn(false);
+
+        service.refresh();
+
+        verify(dailyCollector, never()).backfillSymbol(anyString(), any());
+    }
+
+    @Test
     void us_ticker_verified_against_universe_is_registered() {
         when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
                 news("NVDA,반도체", "NVDA:S5,반도체:S4", "엔비디아 자사주 매입")));
@@ -61,6 +77,20 @@ class CandidateDiscoveryServiceTest {
         service.refresh();
 
         verify(candidateMapper).insert(argThat(c -> c.getSymbol().equals("NVDA") && c.getMarket().equals("US")));
+    }
+
+    @Test
+    void us_ticker_registration_triggers_backfill() {
+        // 2026-09-30 버그 수정: 신규 US 후보는 daily_ohlcv가 없으면 인기/상대강도 판정이
+        // 영원히 false가 되던 문제 — 등록 시 백필을 트리거해야 함.
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("MSFT,IT", "MSFT:S5,IT:S4", "Microsoft 28년 만의 최대 분기 상승")));
+        when(candidateMapper.existsActive("MSFT")).thenReturn(false);
+        when(universeMapper.existsUsSymbol("MSFT")).thenReturn(true);
+
+        service.refresh();
+
+        verify(dailyCollector).backfillSymbol("MSFT", null);
     }
 
     @Test

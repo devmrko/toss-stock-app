@@ -1,5 +1,6 @@
 package com.cloudhandson.tossstock.autotrade;
 
+import com.cloudhandson.tossstock.market.DailyCollector;
 import com.cloudhandson.tossstock.market.UniverseMapper;
 import com.cloudhandson.tossstock.news.NewsSignals;
 import com.cloudhandson.tossstock.news.StockNews;
@@ -20,6 +21,11 @@ import java.util.Set;
  * 종목당 저평가/펀더멘털/인기 판정은 여전히 AutoTradeScheduler가 매수 시점에 함 — 여기선
  * "볼 가치가 있는 후보 풀"만 관리(느슨한 필터, 나머지는 기존 게이트가 거른다).
  * 설계: docs/design/808-auto-trade-engine/README.md §7(2026-09-29 추가)
+ * 2026-09-30: 미국 신규 후보는 일봉(daily_ohlcv) 백필 호출 추가 — KR은 DailyCollector가
+ * 전 종목(3700+) 매일 정기 스캔하지만 US는 그 정기 스캔 대상(universe 테이블)에 없는 티커가
+ * 대부분이라, 백필 없이는 PopularityChecker/RelativeStrengthChecker가 데이터 부족으로 영원히
+ * false — 아무리 강한 호재(예: MSFT "28년 만의 최대 분기 상승")라도 매수 후보에서 구조적으로
+ * 탈락하고 있었음(실측 확인, 2026-09-30). watchlist/holding 등록 시 이미 쓰던 백필 패턴 재사용.
  */
 @Service
 public class CandidateDiscoveryService {
@@ -31,13 +37,16 @@ public class CandidateDiscoveryService {
     private final AutoTradeCandidateMapper candidateMapper;
     private final UniverseMapper universeMapper;
     private final NewsFadeDetector newsFadeDetector;
+    private final DailyCollector dailyCollector;
 
     public CandidateDiscoveryService(StockNewsMapper newsMapper, AutoTradeCandidateMapper candidateMapper,
-                                      UniverseMapper universeMapper, NewsFadeDetector newsFadeDetector) {
+                                      UniverseMapper universeMapper, NewsFadeDetector newsFadeDetector,
+                                      DailyCollector dailyCollector) {
         this.newsMapper = newsMapper;
         this.candidateMapper = candidateMapper;
         this.universeMapper = universeMapper;
         this.newsFadeDetector = newsFadeDetector;
+        this.dailyCollector = dailyCollector;
     }
 
     @Scheduled(cron = "${auto-trade.discovery-cron:0 */15 * * * *}", zone = "Asia/Seoul")
@@ -71,6 +80,9 @@ public class CandidateDiscoveryService {
                 c.setValuationNote("자동발견(" + LocalDateTime.now() + "): " + n.getTitle());
                 candidateMapper.insert(c);
                 log.info("후보 자동등록: {} ({}) - {}", symbol, market, n.getTitle());
+                if ("US".equals(market)) {
+                    dailyCollector.backfillSymbol(symbol, null); // 비동기 — KR은 정기 전종목 스캔이 이미 커버
+                }
             }
         }
     }
