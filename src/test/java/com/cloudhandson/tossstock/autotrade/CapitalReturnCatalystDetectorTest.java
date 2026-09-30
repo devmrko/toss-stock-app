@@ -62,6 +62,25 @@ class CapitalReturnCatalystDetectorTest {
     }
 
     @Test
+    void large_scale_expansion_investment_detected() {
+        // 2026-09-30: 검증단계 완화 — 삼성전기(009150) 실사례. 배당/자사주 아닌 CAPEX성 투자도 촉매로 인정.
+        StockNewsMapper mapper = mock(StockNewsMapper.class);
+        when(mapper.active("009150", 20)).thenReturn(List.of(
+                news("삼성전기, 세종에 4.2조 투자…AI 서버용 반도체 기판 증설", "역대급 투자", "EVENT", "009150:S5")));
+        CapitalReturnCatalystDetector d = new CapitalReturnCatalystDetector(mapper);
+        assertThat(d.hasRecentCatalyst("009150")).isTrue();
+    }
+
+    @Test
+    void supply_contract_win_detected() {
+        StockNewsMapper mapper = mock(StockNewsMapper.class);
+        when(mapper.active("EEE", 20)).thenReturn(List.of(
+                news("EEE, AI 서버용 부품 2850억원 공급계약 체결", "대형 수주", "EVENT", "EEE:S5")));
+        CapitalReturnCatalystDetector d = new CapitalReturnCatalystDetector(mapper);
+        assertThat(d.hasRecentCatalyst("EEE")).isTrue();
+    }
+
+    @Test
     void no_keyword_match_returns_false() {
         StockNewsMapper mapper = mock(StockNewsMapper.class);
         when(mapper.active("CCC", 20)).thenReturn(List.of(

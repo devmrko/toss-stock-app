@@ -78,26 +78,33 @@ auto-trade:
   # 실측 6건(Meta 1.57/Disney 0.97/Lear 0.96/AP위성 1.05/컴투스 <1)이 1.5 근처~이하에 몰려있었음.
   # price-move-pct는 2026-09-29 추가 — 삼성전기(009150)가 6조원 투자 발표 당일 +2.55%나 움직였는데
   # 거래량비는 0.90배(평소도 워낙 유동성이 커서 상대비율이 잘 안 튐)로 탈락한 사례 때문에, 초대형·
-  # 고유동성 종목은 가격반응만으로도 인기로 인정하도록 OR 추가. 둘 다 확정값 아님.
+  # 고유동성 종목은 가격반응만으로도 인기로 인정하도록 OR 추가.
+  # 2026-09-30: 검증 단계(표본 확보 우선, 사용자 명시적 요청)로 재조정 — 1.2→1.0(평균 거래량만
+  # 넘으면 인정), 2.0%→1.5%. 둘 다 확정값 아님, 실거래 데이터 쌓이면 다시 조정.
   volume-spike-window-days: ${AUTO_TRADE_VOLUME_WINDOW_DAYS:20}
-  volume-spike-multiplier: ${AUTO_TRADE_VOLUME_MULTIPLIER:1.2}
-  price-move-pct: ${AUTO_TRADE_PRICE_MOVE_PCT:2.0}
+  volume-spike-multiplier: ${AUTO_TRADE_VOLUME_MULTIPLIER:1.0}
+  price-move-pct: ${AUTO_TRADE_PRICE_MOVE_PCT:1.5}
   # 저평가 판정(#808 후속, 2026-09-25). 실시간 PER/PBR을 ValuationClient(네이버/야후, 비공식 API)로
   # 조회해 둘 다 이 값 이하일 때만 통과. 해성디에스(PER 15.5~19.5/PBR 1.44~1.8)는 통과, 삼성전자
-  # (PBR 3.33)·AAPL(PER 38.6/PBR 45.6)은 탈락하는 수준으로 초기값 설정 — 역시 확정값 아님.
-  max-per: ${AUTO_TRADE_MAX_PER:20.0}
-  max-pbr: ${AUTO_TRADE_MAX_PBR:2.0}
+  # (PBR 3.33)·AAPL(PER 38.6/PBR 45.6)은 탈락하는 수준으로 초기값 설정.
+  # 2026-09-30: 검증 단계 완화(20→30, 2.0→3.0) — 여전히 삼성전기(PER 117/PBR 11.26) 같은 극단값은
+  # 이 절대치만으로는 못 넘고, CapitalReturnCatalystDetector의 성장촉매 OR-게이트로 넘게 됨(README §11).
+  max-per: ${AUTO_TRADE_MAX_PER:30.0}
+  max-pbr: ${AUTO_TRADE_MAX_PBR:3.0}
   # 원칙 §3 체크리스트 중 자동화 가능한 5항목(2026-09-25 추가, 사용자 지적으로 재점검 후 도입).
   # "대부분 YES"이지 "전부 YES"는 아니므로 5개 중 min-fundamental-pass개 이상 통과를 요구.
-  # 최초 4(80%)는 너무 빡빡하다는 지적(2026-09-25)으로 3(과반)으로 완화 — 명백한 결격(적자전환,
-  # 2년 연속 실적감소 같은) 하나만 있어도 못 넘도록 5개 중 최소 3은 유지.
+  # 최초 4(80%)는 너무 빡빡하다는 지적(2026-09-25)으로 3(과반)으로 완화.
+  # 2026-09-30: 검증 단계 추가 완화 3→2(5개 중 40%) — 명백한 결격(적자전환 등) 다발이면 여전히 막히나,
+  # 문턱이 낮아진 만큼 실거래 늘려서 데이터부터 쌓기로(사용자 명시적 요청).
   max-debt-ratio: ${AUTO_TRADE_MAX_DEBT_RATIO:200.0}
-  min-avg-trading-value: ${AUTO_TRADE_MIN_AVG_TRADING_VALUE:500000000}
+  # 2026-09-30: 검증 단계 완화 5억→3억(KRW), 35만→20만(USD) — 소형주 진입폭 넓히되 완전히 없애진 않음
+  # (체결/슬리피지 리스크는 여전히 존재하므로 유동성 게이트 자체를 없애지는 않음).
+  min-avg-trading-value: ${AUTO_TRADE_MIN_AVG_TRADING_VALUE:300000000}
   # 2026-09-30 버그 수정: 미국 종목 거래대금(달러)을 원화 기준과 그대로 비교하고 있었음
-  # (LOCO 하루 거래대금 $3.55M을 5억으로 비교 → 항상 탈락). 별도 달러 기준 추가(~5억원/1400 근사).
-  min-avg-trading-value-usd: ${AUTO_TRADE_MIN_AVG_TRADING_VALUE_USD:350000}
+  # (LOCO 하루 거래대금 $3.55M을 5억으로 비교 → 항상 탈락). 별도 달러 기준 추가.
+  min-avg-trading-value-usd: ${AUTO_TRADE_MIN_AVG_TRADING_VALUE_USD:200000}
   relative-strength-window-days: ${AUTO_TRADE_RS_WINDOW_DAYS:20}
-  min-fundamental-pass: ${AUTO_TRADE_MIN_FUNDAMENTAL_PASS:3}
+  min-fundamental-pass: ${AUTO_TRADE_MIN_FUNDAMENTAL_PASS:2}
   gate:
     min-breadth-pct: ${AUTO_TRADE_GATE_MIN_BREADTH:35}
     max-s1-count: ${AUTO_TRADE_GATE_MAX_S1:1}
