@@ -32,7 +32,7 @@ class OrderExecutorTest {
     void setUp() {
         props = new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4,
-                new AutoTradeProperties.Gate(35, 1, 3));
+                new AutoTradeProperties.Gate(35));
         stateMapper = mock(AutoTradeStateMapper.class);
         positionMapper = mock(AutoTradePositionMapper.class);
         logMapper = mock(AutoTradeOrderLogMapper.class);
@@ -64,7 +64,7 @@ class OrderExecutorTest {
     void db_dry_run_true_also_blocks_real_order_even_if_config_false() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4,
-                new AutoTradeProperties.Gate(35, 1, 3));
+                new AutoTradeProperties.Gate(35));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(true)); // DB가 true면 이중 안전장치로 드라이런
 
@@ -77,7 +77,7 @@ class OrderExecutorTest {
     void both_false_places_real_order_exactly_once() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4,
-                new AutoTradeProperties.Gate(35, 1, 3));
+                new AutoTradeProperties.Gate(35));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(false));
         TossOrder.Execution exec = new TossOrder.Execution("20", "50000", "1000000", "0", "0", null, null);
@@ -104,7 +104,7 @@ class OrderExecutorTest {
     void sell_follows_position_dry_run_flag_not_global_state() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4,
-                new AutoTradeProperties.Gate(35, 1, 3));
+                new AutoTradeProperties.Gate(35));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(false));
 

@@ -38,6 +38,6 @@ public record AutoTradeProperties(
     }
 
     /** 시장상황 게이트 임계값 — "운영하면서 조정" 대상(하드코딩 금지). */
-    public record Gate(int minBreadthPct, int maxS1Count, int lookbackDays) {
+    public record Gate(int minBreadthPct) {
     }
 }

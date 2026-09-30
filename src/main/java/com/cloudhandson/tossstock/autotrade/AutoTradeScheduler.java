@@ -4,8 +4,6 @@ import com.cloudhandson.tossstock.briefing.DiscordClient;
 import com.cloudhandson.tossstock.market.DailyOhlcv;
 import com.cloudhandson.tossstock.market.DailyOhlcvMapper;
 import com.cloudhandson.tossstock.market.UniverseMapper;
-import com.cloudhandson.tossstock.news.NewsSignals;
-import com.cloudhandson.tossstock.news.StockNews;
 import com.cloudhandson.tossstock.news.StockNewsMapper;
 import com.cloudhandson.tossstock.toss.PriceCache;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
@@ -152,13 +150,7 @@ public class AutoTradeScheduler {
         long total = numberOf(breadth == null ? null : breadth.get("TOTAL"));
         int breadthPct = total > 0 ? (int) Math.round(up * 100.0 / total) : 50; // 데이터 없으면 중립값
 
-        List<StockNews> marketNews = newsMapper.active("MARKET", 30);
-        List<String> levels = marketNews.stream()
-                .map(n -> NewsSignals.levelOf(n.getSentiment(), "MARKET"))
-                .filter(java.util.Objects::nonNull)
-                .toList();
-
-        return MarketRegimeGate.evaluate(breadthPct, levels, props.gate());
+        return MarketRegimeGate.evaluate(breadthPct, props.gate());
     }
 
     private void scanCandidates(int openSlots) {
