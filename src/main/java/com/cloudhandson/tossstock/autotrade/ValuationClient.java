@@ -85,44 +85,114 @@ public class ValuationClient {
 
     /**
      * 연도별 실적(매출/영업이익/순이익/부채비율/배당) — 컨센서스(추정) 연도 제외, 실제 결산만.
-     * KR(네이버)만 지원 — US는 후속 과제(#808 §12). 실패 시 null(fail-closed).
+     * KR=네이버, US=야후(2026-09-30 추가). 실패 시 null(fail-closed).
      */
     public AnnualFinancials getAnnualFinancials(String symbol, String market) {
-        if (!"KR".equalsIgnoreCase(market)) {
+        try {
+            return "US".equalsIgnoreCase(market) ? fetchYahooFinancials(symbol) : fetchNaverFinancials(symbol);
+        } catch (Exception e) {
+            log.warn("연간 실적 조회 실패(symbol={}, market={}): {}", symbol, market, e.toString());
             return null;
         }
-        try {
-            HttpRequest req = HttpRequest.newBuilder(
-                    URI.create("https://m.stock.naver.com/api/stock/" + symbol + "/finance/annual"))
-                    .header("User-Agent", "Mozilla/5.0")
-                    .timeout(TIMEOUT)
-                    .GET().build();
-            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (res.statusCode() >= 400) {
+    }
+
+    private AnnualFinancials fetchNaverFinancials(String symbol) throws IOException, InterruptedException {
+        HttpRequest req = HttpRequest.newBuilder(
+                URI.create("https://m.stock.naver.com/api/stock/" + symbol + "/finance/annual"))
+                .header("User-Agent", "Mozilla/5.0")
+                .timeout(TIMEOUT)
+                .GET().build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() >= 400) {
+            return null;
+        }
+        JsonNode root = om.readTree(res.body()).path("financeInfo");
+        List<String> actualYearKeys = new ArrayList<>();
+        for (JsonNode t : root.path("trTitleList")) {
+            if ("N".equals(t.path("isConsensus").asText())) {
+                actualYearKeys.add(t.path("key").asText());
+            }
+        }
+        actualYearKeys.sort(String::compareTo); // "YYYYMM" 문자열 정렬 = 시간순(과거→최근)
+
+        JsonNode rows = root.path("rowList");
+        List<AnnualFinancials.Year> years = new ArrayList<>();
+        for (String key : actualYearKeys) {
+            years.add(new AnnualFinancials.Year(key,
+                    cellValue(rows, "매출액", key), cellValue(rows, "영업이익", key),
+                    cellValue(rows, "당기순이익", key), cellValue(rows, "부채비율", key),
+                    cellValue(rows, "주당배당금", key)));
+        }
+        return new AnnualFinancials(years);
+    }
+
+    /**
+     * 야후 incomeStatementHistory/balanceSheetHistory/summaryDetail로 연도별 실적 구성.
+     * 실측(2026-09-30, LOCO): operatingIncome·balanceSheet 필드가 거의 항상 null — 무료 API
+     * 한계. 매출·순이익만 신뢰 가능. AnnualFinancials.Year에 그대로 담되(부채비율/영업이익은
+     * null 가능), EarningsQualityChecker가 operatingProfit 전부 null인 경우를 별도 처리.
+     */
+    private AnnualFinancials fetchYahooFinancials(String symbol) throws IOException, InterruptedException {
+        ensureYahooCrumb();
+        AnnualFinancials f = fetchYahooFinancialsOnce(symbol);
+        if (f == null) {
+            refreshYahooCrumb();
+            f = fetchYahooFinancialsOnce(symbol);
+        }
+        return f;
+    }
+
+    private AnnualFinancials fetchYahooFinancialsOnce(String symbol) throws IOException, InterruptedException {
+        String url = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/" + symbol
+                + "?modules=incomeStatementHistory,balanceSheetHistory,summaryDetail&crumb=" + yahooCrumb;
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                .header("User-Agent", "Mozilla/5.0")
+                .timeout(TIMEOUT)
+                .GET().build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() >= 400) {
+            return null;
+        }
+        JsonNode results = om.readTree(res.body()).path("quoteSummary").path("result");
+        if (!results.isArray() || results.isEmpty()) {
+            return null;
+        }
+        JsonNode first = results.get(0);
+        BigDecimal dividendPerShare = readRaw(first.path("summaryDetail").path("dividendRate"));
+
+        JsonNode incomeStatements = first.path("incomeStatementHistory").path("incomeStatementHistory");
+        JsonNode balanceSheets = first.path("balanceSheetHistory").path("balanceSheetStatements");
+
+        List<AnnualFinancials.Year> years = new ArrayList<>();
+        List<JsonNode> incomeList = new ArrayList<>();
+        incomeStatements.forEach(incomeList::add);
+        // 야후는 최신→과거 순으로 줌 — 과거→최신으로 뒤집는다.
+        for (int i = incomeList.size() - 1; i >= 0; i--) {
+            JsonNode y = incomeList.get(i);
+            String endDate = y.path("endDate").path("fmt").asText("");
+            BigDecimal revenue = readRaw(y.path("totalRevenue"));
+            BigDecimal operatingProfit = readRaw(y.path("operatingIncome"));
+            BigDecimal netIncome = readRaw(y.path("netIncome"));
+            BigDecimal debtRatio = debtRatioFor(balanceSheets, endDate);
+            years.add(new AnnualFinancials.Year(endDate, revenue, operatingProfit, netIncome, debtRatio, dividendPerShare));
+        }
+        return new AnnualFinancials(years);
+    }
+
+    /** 부채비율(%) = 총부채/자기자본*100 — 야후 실측상 US 종목은 거의 항상 null(무료 API 한계, fail-closed). */
+    private static BigDecimal debtRatioFor(JsonNode balanceSheets, String endDate) {
+        for (JsonNode b : balanceSheets) {
+            if (!endDate.equals(b.path("endDate").path("fmt").asText(""))) {
+                continue;
+            }
+            BigDecimal liab = readRaw(b.path("totalLiab"));
+            BigDecimal equity = readRaw(b.path("totalStockholderEquity"));
+            if (liab == null || equity == null || equity.signum() == 0) {
                 return null;
             }
-            JsonNode root = om.readTree(res.body()).path("financeInfo");
-            List<String> actualYearKeys = new ArrayList<>();
-            for (JsonNode t : root.path("trTitleList")) {
-                if ("N".equals(t.path("isConsensus").asText())) {
-                    actualYearKeys.add(t.path("key").asText());
-                }
-            }
-            actualYearKeys.sort(String::compareTo); // "YYYYMM" 문자열 정렬 = 시간순(과거→최근)
-
-            JsonNode rows = root.path("rowList");
-            List<AnnualFinancials.Year> years = new ArrayList<>();
-            for (String key : actualYearKeys) {
-                years.add(new AnnualFinancials.Year(key,
-                        cellValue(rows, "매출액", key), cellValue(rows, "영업이익", key),
-                        cellValue(rows, "당기순이익", key), cellValue(rows, "부채비율", key),
-                        cellValue(rows, "주당배당금", key)));
-            }
-            return new AnnualFinancials(years);
-        } catch (Exception e) {
-            log.warn("연간 실적 조회 실패(symbol={}): {}", symbol, e.toString());
-            return null;
+            return liab.divide(equity, java.math.MathContext.DECIMAL64).multiply(BigDecimal.valueOf(100));
         }
+        return null;
     }
 
     private static BigDecimal cellValue(JsonNode rows, String title, String yearKey) {

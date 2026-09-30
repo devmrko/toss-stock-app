@@ -28,6 +28,7 @@ public record AutoTradeProperties(
         double maxPbr,
         double maxDebtRatio,
         BigDecimal minAvgTradingValue,
+        BigDecimal minAvgTradingValueUsd,
         int relativeStrengthWindowDays,
         int minFundamentalPass,
         @NestedConfigurationProperty Gate gate) {

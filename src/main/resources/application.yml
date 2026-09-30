@@ -93,6 +93,9 @@ auto-trade:
   # 2년 연속 실적감소 같은) 하나만 있어도 못 넘도록 5개 중 최소 3은 유지.
   max-debt-ratio: ${AUTO_TRADE_MAX_DEBT_RATIO:200.0}
   min-avg-trading-value: ${AUTO_TRADE_MIN_AVG_TRADING_VALUE:500000000}
+  # 2026-09-30 버그 수정: 미국 종목 거래대금(달러)을 원화 기준과 그대로 비교하고 있었음
+  # (LOCO 하루 거래대금 $3.55M을 5억으로 비교 → 항상 탈락). 별도 달러 기준 추가(~5억원/1400 근사).
+  min-avg-trading-value-usd: ${AUTO_TRADE_MIN_AVG_TRADING_VALUE_USD:350000}
   relative-strength-window-days: ${AUTO_TRADE_RS_WINDOW_DAYS:20}
   min-fundamental-pass: ${AUTO_TRADE_MIN_FUNDAMENTAL_PASS:3}
   gate:

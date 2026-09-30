@@ -210,7 +210,9 @@ public class AutoTradeScheduler {
         boolean earnings = EarningsQualityChecker.hasThreeYearUptrend(financials);
         boolean balance = BalanceSheetChecker.isHealthy(financials, props.maxDebtRatio());
         boolean capitalReturn = CapitalReturnChecker.paysDividend(financials);
-        boolean liquidity = LiquidityChecker.isLiquid(recentDays, props.minAvgTradingValue());
+        BigDecimal liquidityThreshold = "US".equalsIgnoreCase(c.getMarket())
+                ? props.minAvgTradingValueUsd() : props.minAvgTradingValue();
+        boolean liquidity = LiquidityChecker.isLiquid(recentDays, liquidityThreshold);
 
         String indexSymbol = "US".equalsIgnoreCase(c.getMarket()) ? "SPY" : "069500";
         List<DailyOhlcv> stockWindow = dailyMapper.recentForSymbols(List.of(c.getSymbol()),

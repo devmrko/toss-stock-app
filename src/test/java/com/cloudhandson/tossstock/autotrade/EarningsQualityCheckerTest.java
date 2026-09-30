@@ -53,4 +53,45 @@ class EarningsQualityCheckerTest {
                 year("2023", 100, 10, 8), year("2024", 100, 15, 12), year("2025", 100, 20, 16)));
         assertThat(EarningsQualityChecker.hasThreeYearUptrend(f)).isTrue();
     }
+
+    private static AnnualFinancials.Year yearNoOperatingProfit(String label, long rev, long net) {
+        return new AnnualFinancials.Year(label, BigDecimal.valueOf(rev), null,
+                BigDecimal.valueOf(net), null, null);
+    }
+
+    /** 2026-09-30: 야후(US) 무료 API 실측 — 영업이익 항상 null(LOCO 등). 매출+순이익만으로 대체 판정. */
+    @Test
+    void us_style_missing_operating_profit_falls_back_to_revenue_and_net_income() {
+        AnnualFinancials f = new AnnualFinancials(List.of(
+                yearNoOperatingProfit("2023", 468664000, 25554000),
+                yearNoOperatingProfit("2024", 473008000, 25684000),
+                yearNoOperatingProfit("2025", 490046000, 26486000)));
+        assertThat(EarningsQualityChecker.hasThreeYearUptrend(f)).isTrue();
+    }
+
+    @Test
+    void us_style_missing_operating_profit_but_net_income_declining_fails() {
+        AnnualFinancials f = new AnnualFinancials(List.of(
+                yearNoOperatingProfit("2023", 100, 30),
+                yearNoOperatingProfit("2024", 120, 20),
+                yearNoOperatingProfit("2025", 150, 10)));
+        assertThat(EarningsQualityChecker.hasThreeYearUptrend(f)).isFalse();
+    }
+
+    @Test
+    void us_style_missing_operating_profit_but_net_loss_fails() {
+        AnnualFinancials f = new AnnualFinancials(List.of(
+                yearNoOperatingProfit("2023", 100, -30),
+                yearNoOperatingProfit("2024", 120, -20),
+                yearNoOperatingProfit("2025", 150, -10)));
+        assertThat(EarningsQualityChecker.hasThreeYearUptrend(f)).isFalse();
+    }
+
+    @Test
+    void partial_operating_profit_data_still_applies_strict_check() {
+        // 일부 연도만 null이면(전부 null이 아니면) 원래대로 엄격 적용 — KR처럼 데이터 있는 경우 완화 우회 방지.
+        AnnualFinancials f = new AnnualFinancials(List.of(
+                year("2023", 100, 10, 8), yearNoOperatingProfit("2024", 120, 12), year("2025", 150, 20, 16)));
+        assertThat(EarningsQualityChecker.hasThreeYearUptrend(f)).isFalse();
+    }
 }
