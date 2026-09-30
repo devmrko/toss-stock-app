@@ -106,7 +106,13 @@ auto-trade:
   relative-strength-window-days: ${AUTO_TRADE_RS_WINDOW_DAYS:20}
   min-fundamental-pass: ${AUTO_TRADE_MIN_FUNDAMENTAL_PASS:2}
   gate:
-    min-breadth-pct: ${AUTO_TRADE_GATE_MIN_BREADTH:35}
+    # 2026-09-30: 35→20으로 완화. 실측(최근 25거래일 breadth 분포: 16.3~69.9%, 중앙값≈45%) —
+    # 35 기준은 5/25일(20%, 오늘 30.8% 포함하는 통상적 약세일까지)을 통째로 막았음. 사용자가
+    # "전체 상승일 때만 사는 게 맞냐"고 재질문 — 매수 논리 자체가 종목별 촉매/펀더멘털이라
+    # 시장 전체 breadth와 직접 인과관계가 약함. 20은 이번 25일 중 가장 심한 날(16.3%)급만 차단.
+    # "지속 하락장" 방어는 이 게이트가 아니라 서킷브레이커(전체손익 -15% 트립)와 종목별
+    # 손절(-10%/추적손절)이 담당 — 진입 타이밍과 무관하게 계속 작동하므로 완전 무방비는 아님.
+    min-breadth-pct: ${AUTO_TRADE_GATE_MIN_BREADTH:20}
     max-s1-count: ${AUTO_TRADE_GATE_MAX_S1:1}
     lookback-days: ${AUTO_TRADE_GATE_LOOKBACK_DAYS:3}
 
