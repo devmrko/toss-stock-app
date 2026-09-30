@@ -1,7 +1,7 @@
 # 설계서: 자동매매 엔진 — 5종목 슬롯, 저평가+호재+인기 룰, 고정%추적손절, 시장상황 게이트, 드라이런/서킷브레이커 (#808)
 
 > **상태**: Approved <!-- Draft | Approved | Superseded -->
-> **작성**: [AI] Architect · **최종수정**: 2026-09-22
+> **작성**: [AI] Architect · **최종수정**: 2026-09-30
 > **추적성** — Redmine: #808 · 관련: #802(buying-power, X-Tossinvest-Account=accountSeq 확정), #409(주문 API 원래 범위 밖으로 뒀던 이유)
 > · 구현 파일(예정): `src/main/java/com/cloudhandson/tossstock/autotrade/**`, `toss/TossApiClient.java`(주문 메서드 추가)
 > · 테스트(예정): `src/test/java/com/cloudhandson/tossstock/autotrade/**`
@@ -163,11 +163,16 @@
 - **원칙 §3 체크리스트 과소단순화 — 2026-09-25 지적·수정**: 초기 "인기+호재+저평가" 3조건은 대화 중 임의로 만든 단순화였고, 실제 §3의 7개 항목(이야기/실적의질/재무건전성/자본배분/거버넌스/시장성/가격추세) 중 손절룰 말고는 거의 반영이 안 됐었음. 자동화 가능한 5항목(실적/재무/자본배분/시장성/상대강도)을 `FundamentalScore`로 추가 구현 — "대부분 YES"(전부 아님) 원문에 맞춰 5개 중 4개 이상 통과 요구.
 - ~~주문 API 안 써본 스펙에 의존~~ → 2026-09-29 해소(해성디에스 1주 매수/매도 실주문 왕복 검증).
 - **레짐게이트 임계값**: breadthPct/뉴스 감정 기준값은 초기 추정치로 시작, "운영하면서 조정"(사용자 명시적 요청) — 하드코딩하지 말고 `application.yml`에서 조정 가능하게.
+- **미국 종목 펀더멘털 점수 영구 2/5 고정 버그 — 2026-09-30 해소**: `ValuationClient.getAnnualFinancials`가 KR(네이버)만 지원하고 US는 무조건 `null`을 반환 → `EarningsQualityChecker`/`BalanceSheetChecker`/`CapitalReturnChecker`(펀더멘털 5항목 중 3항목)가 미국 종목에 대해 구조적으로 항상 false, 점수가 2/5(min-fundamental-pass=3 미달)에 고정되어 **어떤 미국 종목도 매수 후보를 통과할 수 없었음**. 실제 라이브 운영 중 LOCO가 다른 게이트를 전부 통과하고도 최종 매수에서 누락된 걸 사용자가 "다른건 없었어? 살만한거"로 파고들다 발견. 야후 `incomeStatementHistory`/`balanceSheetHistory`/`summaryDetail`로 US 실적 조회 추가(fn-valuation-client.md §5). 실측상 야후 무료 API는 영업이익·부채비율이 거의 항상 `null`이라, `EarningsQualityChecker`는 그 경우 매출+순이익만으로 대체 판정하도록 완화(단, 데이터가 일부라도 있으면 원래 엄격 로직 유지 — KR엔 영향 없음). `BalanceSheetChecker`(재무건전성)는 완화 없이 그대로 fail-closed.
+- **유동성 판정 통화 불일치 버그 — 2026-09-30 해소**: `LiquidityChecker.isLiquid`가 달러 표시 거래대금(예: LOCO 실측 일평균 $3.55M)을 원화 기준 임계값(5억원)과 환율 변환 없이 그대로 비교 → 미국 종목은 절대 유동성 통과 불가. `auto-trade.min-avg-trading-value-usd`(달러 전용 임계값, 기본 $350,000)를 신설해 `AutoTradeScheduler`가 후보의 `market`을 보고 KRW/USD 임계값을 선택하도록 수정. 같은 클래스의 버그(§9 환율 이슈)로, 정밀 환율 연동 대신 별도 통화별 임계값으로 우회 — 완전한 실시간 FX 통합은 여전히 §12 후속 과제.
 
 ## 12. 미해결 질문 (Open Questions)
 - ~~저평가 자동 스크리닝~~ → 2026-09-25 해소(ValuationClient, 네이버/야후).
-- 미국 종목 환율 통합 손익 계산 — v1은 통화별 별도 표시로 우회.
+- 미국 종목 환율 통합 손익 계산 — v1은 통화별 별도 표시로 우회(단, 2026-09-30 유동성 게이트만 통화별 임계값 분리로 부분 대응 — §11).
 - ~~주문 API 실제 요청/응답 스키마~~ → 2026-09-29 해소.
+- ~~미국 종목 실적 조회 안 됨(펀더멘털 항상 2/5 고정)~~ → 2026-09-30 해소(야후 연간실적 연동, fn-valuation-client.md).
+- ~~미국 종목 유동성 통화 불일치~~ → 2026-09-30 해소(달러 전용 임계값 분리).
+- **여전히 없음**: `EarningsQualityChecker`/`BalanceSheetChecker`/`CapitalReturnChecker`/`LiquidityChecker`/`RelativeStrengthChecker`(펀더멘털 5항목)에 대한 fn-*.md 함수 설계서 — 테스트 파일 주석은 `fn-fundamental-checklist.md`를 가리키나 실제로는 작성된 적 없음(설계서 게이트 관점에서 남은 부채, 별도 후속 필요).
 - 시장상황 게이트 임계값(breadthPct 몇 % 이하면 차단할지 등) 초기값 — 운영하며 조정 예정(사용자 합의).
 - **여전히 미자동화**(§3 체크리스트 잔여 항목): 1.이야기(론, 촉매의 질적 판단) — 호재뉴스 S4↑로만 대충 대체 중, 5.거버넌스/리스크(5년 분쟁·소송 이력) — 데이터 소스 없음, 재무건전성 중 "유증/회사채 남발 없음"(발행 이력 필요) — 부채비율만 봄, 자본배분 중 자사주매입/소각(공시 이력 필요) — 배당만 봄. 전부 후속 과제.
 - `FundamentalScore`의 min-fundamental-pass=4(5개 중) 초기값 — ATR/거래량스파이크 배수처럼 확정 아님, 운영 데이터 쌓이면 조정.
