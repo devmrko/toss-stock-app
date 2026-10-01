@@ -1,6 +1,6 @@
 # 함수 설계서: `RangeBoundChecker.evaluate` (#818)
 
-> **부모 설계서**: ./README.md · **상태**: Draft
+> **부모 설계서**: ./README.md · **상태**: Approved
 > **작성**: [AI] Architect · **구현**: `com.cloudhandson.tossstock.rangetrade.RangeBoundChecker`(TBD) · **테스트**: `RangeBoundCheckerTest`(TBD)
 
 ## 1. 시그니처

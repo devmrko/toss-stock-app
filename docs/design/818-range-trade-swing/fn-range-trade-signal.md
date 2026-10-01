@@ -1,6 +1,6 @@
 # 함수 설계서: `RangeTradeSignal.decide` (#818)
 
-> **부모 설계서**: ./README.md · **상태**: Draft
+> **부모 설계서**: ./README.md · **상태**: Approved
 > **작성**: [AI] Architect · **구현**: `com.cloudhandson.tossstock.rangetrade.RangeTradeSignal`(TBD) · **테스트**: `RangeTradeSignalTest`(TBD)
 
 ## 1. 시그니처

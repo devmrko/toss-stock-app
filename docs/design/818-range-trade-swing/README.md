@@ -1,6 +1,6 @@
 # 설계서: 레인지(박스권) 스윙매매 — 2번째 자동매매 트랙 (#818)
 
-> **상태**: Draft
+> **상태**: Approved
 > **작성**: [AI] Architect · **최종수정**: 2026-10-01
 > **추적성** — Redmine: #818 · 관련: #808(기존 모멘텀 자동매매 엔진), 관련 ADR: 없음
 > · 구현 파일(예정): `src/main/java/com/cloudhandson/tossstock/rangetrade/**`
