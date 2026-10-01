@@ -97,7 +97,7 @@
 ### `range_trade_state` (싱글턴, #808 `auto_trade_state`와 분리 — 독립 예산/서킷브레이커)
 | 컬럼 | 설명 |
 |---|---|
-| total_budget, max_symbols, dry_run, circuit_breaker_tripped 등 | `auto_trade_state`와 동일 구조, 완전히 별도 행/테이블. 예산 액수는 §12 미해결 질문. |
+| total_budget, max_symbols, dry_run, circuit_breaker_tripped 등 | `auto_trade_state`와 동일 구조, 완전히 별도 행/테이블. **total_budget=1,000,000**(2026-10-01 확정, §11). max_symbols/per-symbol 배분은 Developer 단계에서 확정. |
 
 ### `range_trade_order_log` (#808 `auto_trade_order_log`와 동일 구조, 분리된 테이블)
 - 2026-10-01 #808 사고(toss_order_id 길이초과로 포지션 유실) 교훈 반영 — **처음부터 `toss_order_id VARCHAR2(200)`으로 생성**.
@@ -150,7 +150,7 @@
   - `entry-zone-pct`/`exit-zone-pct` = 10.0/10.0(초기 제안 — 위 역산의 전제값, 바뀌면 min-width-pct도 재계산 필요)
   - `breakdown-pct` = 5.0(초기 제안, 그대로)
 - **`EarningsCalendarGate`의 데이터 소스 미정(신규)** — Ellman의 "Banned Stocks"(예정된 실적발표 제외)를 적용하려면 KR/US 종목의 "다음 실적발표 예정일"이 필요한데, 지금 쓰는 네이버/야후 비공식 API에 그 필드가 있는지 확인 안 됨 — Developer 단계에서 실제 API 응답으로 확인 필요(가정 금지, 이 프로젝트 관례).
-- **예산/슬롯 수** — #808처럼 실제 계좌 상황 보고 사용자가 정해야 함. 완전히 별도 풀로 둘지, 전체 예산 안에서 모멘텀과 나눠 쓸지도 미정.
+- ~~예산/슬롯 수~~ → **2026-10-01 해소**: 기존 400만원 예산을 모멘텀(#808) 300만/레인지(#818) 100만으로 재분배(사용자 결정). `range_trade_state.total_budget=1,000,000`으로 구현. 슬롯 수는 Developer 단계에서 per-symbol 예산 설계와 함께 확정(예: 2~3슬롯×33~50만원). 모멘텀 쪽은 `auto-trade.total-budget`을 4,000,000→3,000,000, `per-symbol-budget`을 800,000→600,000으로 즉시 반영·배포 완료(DB `auto_trade_state`도 갱신). 단, 현재 012330 포지션에 377만원이 묶여있어(매수가능금액 22만원뿐) 당장은 숫자상 재분배일 뿐 — 포지션 매도로 현금이 풀려야 레인지 트랙에 실제 자금이 들어감.
 - **스캔 대상 유니버스 필터링 강도** — 3700+ 종목 전부 매일 `RangeBoundChecker` 돌리면 연산량이 꽤 됨, 유동성 1차 필터로 얼마나 줄어드는지 실측 필요.
 - **미국 시장 확장 여부** — v1은 KR만, US는 #808처럼 후속 이슈로 둘지 같이 설계할지.
 - **스킵 경로 로깅 수준** — #808에서 "설계서는 전부 로그 남긴다 했는데 코드는 안 남김" 불일치가 있었음(README §11) — 이 트랙은 처음부터 일치시킬지, 아니면 동일하게 성공/실패만 남길지 결정 필요.

@@ -62,9 +62,13 @@ auto-trade:
   # 2026-09-29: 재조정 — 지금은 시스템 만든 지 얼마 안 돼 검증 단계라, 수익 극대화보다
   # 표본 확보가 우선. 왕복비용이 비율기반(136원/6만원≈0.23%)이라 소액도 불리하지 않음.
   # 검증되면 다시 §5대로 2~5종목 집중+금액 확대로 되돌릴 예정.
-  total-budget: ${AUTO_TRADE_TOTAL_BUDGET:4000000}
+  # 2026-10-01: #818 레인지 트레이딩 트랙 신설에 맞춰 400만원 예산을 모멘텀 300만/레인지
+  # 100만으로 재분배(사용자 결정) — total-budget·per-symbol-budget 하향. 실제로는 012330
+  # 포지션에 377만원이 묶여있어(매수가능금액 22만원뿐) 당장은 숫자상 재분배일 뿐, 포지션
+  # 매도로 현금이 풀리면 그때부터 실질적으로 분리 적용됨.
+  total-budget: ${AUTO_TRADE_TOTAL_BUDGET:3000000}
   max-symbols: ${AUTO_TRADE_MAX_SYMBOLS:5}
-  per-symbol-budget: ${AUTO_TRADE_PER_SYMBOL_BUDGET:800000}
+  per-symbol-budget: ${AUTO_TRADE_PER_SYMBOL_BUDGET:600000}
   circuit-breaker-pct: ${AUTO_TRADE_CIRCUIT_BREAKER_PCT:15.0}
   hard-stop-pct: ${AUTO_TRADE_HARD_STOP_PCT:10.0}
   trail-stop-pct: ${AUTO_TRADE_TRAIL_STOP_PCT:10.0}
