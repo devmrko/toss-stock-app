@@ -8,10 +8,18 @@ import com.cloudhandson.tossstock.toss.dto.TossOrderRequest;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
 import com.cloudhandson.tossstock.toss.dto.TossStock;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StreamUtils;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.zip.GZIPInputStream;
 
 /**
  * 토스 Open API 읽기 호출(시세/종목/계좌). 응답은 {"result":[...]} 래퍼.
@@ -19,6 +27,8 @@ import java.util.List;
  */
 @Component
 public class TossApiClient {
+
+    private static final Logger log = LoggerFactory.getLogger(TossApiClient.class);
 
     private final RestClient restClient;
     private final TossAuthClient auth;
@@ -138,6 +148,21 @@ public class TossApiClient {
 
     // ---- 계좌 식별 헤더(X-Tossinvest-Account) — accountSeq 사용(#802 실측으로 확정, accountNo 아님) ----
 
+    /**
+     * 에러 응답 본문 읽기 — Toss 응답이 gzip(Content-Encoding)으로 압축된 채 올 수 있어
+     * (2026-10-01 실측: onStatus 콜백의 raw InputStream은 자동 압축해제가 안 됨) 헤더로 감지 후
+     * 수동 압축해제. 실패해도 예외를 삼키고 빈 문자열(호출측 로그 품질 저하일 뿐, 흐름 차단 안 함).
+     */
+    private static String readErrorBody(ClientHttpResponse res) {
+        try (InputStream raw = res.getBody()) {
+            String encoding = res.getHeaders().getFirst("Content-Encoding");
+            InputStream in = "gzip".equalsIgnoreCase(encoding) ? new GZIPInputStream(raw) : raw;
+            return StreamUtils.copyToString(in, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "(응답 본문 읽기 실패: " + e.getMessage() + ")";
+        }
+    }
+
     private String firstAccountSeq() {
         List<TossAccount> accounts = getAccounts();
         if (accounts.isEmpty()) {
@@ -176,7 +201,9 @@ public class TossApiClient {
                 .body(req)
                 .retrieve()
                 .onStatus(s -> s.value() >= 400, (r, res) -> {
-                    throw new TossApiException("주문 접수 실패: HTTP " + res.getStatusCode().value(),
+                    String responseBody = readErrorBody(res);
+                    log.warn("주문 접수 실패: HTTP {} 요청={} 응답={}", res.getStatusCode().value(), req, responseBody);
+                    throw new TossApiException("주문 접수 실패: HTTP " + res.getStatusCode().value() + " " + responseBody,
                             res.getStatusCode().value());
                 })
                 .body(OrderResponse.class);

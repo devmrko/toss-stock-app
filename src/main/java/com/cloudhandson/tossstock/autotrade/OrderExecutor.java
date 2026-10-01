@@ -48,14 +48,14 @@ public class OrderExecutor {
     public boolean buy(String symbol, String market, BigDecimal budget, BigDecimal currentPrice) {
         if (budget.compareTo(props.perSymbolBudget()) > 0) {
             log.warn("매수 차단(예산 상한 초과): symbol={}, budget={}, cap={}", symbol, budget, props.perSymbolBudget());
-            saveLog(symbol, "BUY", "BUY_SIGNAL", true, null, null, null, false, "예산 상한 초과");
+            saveLogSafely(symbol, "BUY", "BUY_SIGNAL", true, null, null, null, false, "예산 상한 초과");
             return false;
         }
 
         boolean dryRun = effectiveDryRun();
         BigDecimal qty = budget.divide(currentPrice, 0, RoundingMode.DOWN);
         if (qty.signum() <= 0) {
-            saveLog(symbol, "BUY", "BUY_SIGNAL", dryRun, null, currentPrice, null, false, "수량 0(예산 부족)");
+            saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, null, currentPrice, null, false, "수량 0(예산 부족)");
             return false;
         }
 
@@ -71,12 +71,12 @@ public class OrderExecutor {
                 filledPrice = actualFilledPrice(order, currentPrice);
             } catch (RuntimeException e) {
                 success = false;
-                message = "주문 실패: " + e.getMessage();
+                message = truncate("주문 실패: " + e.getMessage());
                 log.warn("매수 주문 실패: symbol={}, {}", symbol, e.toString());
             }
         }
 
-        saveLog(symbol, "BUY", "BUY_SIGNAL", dryRun, qty, filledPrice, tossOrderId, success, message);
+        saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, qty, filledPrice, tossOrderId, success, message);
         if (!success) {
             notify("⚠️ " + symbol + " 매수 실패 — " + message);
             return false;
@@ -112,12 +112,12 @@ public class OrderExecutor {
                 filledPrice = actualFilledPrice(order, currentPrice);
             } catch (RuntimeException e) {
                 success = false;
-                message = "주문 실패: " + e.getMessage();
+                message = truncate("주문 실패: " + e.getMessage());
                 log.warn("매도 주문 실패: symbol={}, {}", position.getSymbol(), e.toString());
             }
         }
 
-        saveLog(position.getSymbol(), "SELL", reason.name(), dryRun, position.getEntryQty(), filledPrice,
+        saveLogSafely(position.getSymbol(), "SELL", reason.name(), dryRun, position.getEntryQty(), filledPrice,
                 tossOrderId, success, message);
         if (!success) {
             notify("⚠️ " + position.getSymbol() + " 매도 실패 — " + message);
@@ -133,6 +133,11 @@ public class OrderExecutor {
         return true;
     }
 
+    /** message 컬럼이 VARCHAR2(500)이라 Toss 응답 본문까지 담은 예외 메시지가 넘칠 수 있어 방어적으로 자름. */
+    private static String truncate(String s) {
+        return s.length() > 500 ? s.substring(0, 500) : s;
+    }
+
     /** 실주문 체결가(execution.averageFilledPrice) 사용, 없으면 견적가로 폴백. */
     private static BigDecimal actualFilledPrice(TossOrder order, BigDecimal fallback) {
         if (order == null || order.execution() == null || order.execution().averageFilledPrice() == null) {
@@ -145,19 +150,30 @@ public class OrderExecutor {
         }
     }
 
-    private void saveLog(String symbol, String side, String reason, boolean dryRun, BigDecimal qty,
-                          BigDecimal price, String tossOrderId, boolean success, String message) {
-        AutoTradeOrderLog entry = new AutoTradeOrderLog();
-        entry.setSymbol(symbol);
-        entry.setSide(side);
-        entry.setReason(reason);
-        entry.setDryRun(dryRun);
-        entry.setRequestedQty(qty);
-        entry.setRequestedPrice(price);
-        entry.setTossOrderId(tossOrderId);
-        entry.setSuccess(success);
-        entry.setMessage(message);
-        logMapper.insert(entry);
+    /**
+     * 감사로그 기록 실패가 실제 체결(포지션 기록)을 막으면 안 됨 — 2026-10-01 실사례: toss_order_id
+     * 컬럼 길이 초과(ORA-12899)로 saveLog가 예외를 던져 실제로 체결된 매수가 포지션에 반영되지
+     * 않았고, "이미 보유 중" 체크가 안 돼 같은 종목을 틱마다 반복 매수하는 사고로 이어짐(012330,
+     * 5회 중복매수 후 잔액 소진). 예외를 삼키고 ERROR 로그만 남김 — 호출측(buy/sell)은 계속 진행.
+     */
+    private void saveLogSafely(String symbol, String side, String reason, boolean dryRun, BigDecimal qty,
+                                BigDecimal price, String tossOrderId, boolean success, String message) {
+        try {
+            AutoTradeOrderLog entry = new AutoTradeOrderLog();
+            entry.setSymbol(symbol);
+            entry.setSide(side);
+            entry.setReason(reason);
+            entry.setDryRun(dryRun);
+            entry.setRequestedQty(qty);
+            entry.setRequestedPrice(price);
+            entry.setTossOrderId(tossOrderId);
+            entry.setSuccess(success);
+            entry.setMessage(message);
+            logMapper.insert(entry);
+        } catch (RuntimeException e) {
+            log.error("주문 감사로그 기록 실패(symbol={}, side={}, success={}) — 포지션 기록/흐름은 계속 진행: {}",
+                    symbol, side, success, e.toString());
+        }
     }
 
     private void notify(String content) {

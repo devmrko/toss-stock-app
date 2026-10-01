@@ -101,6 +101,27 @@ class OrderExecutorTest {
     }
 
     @Test
+    void audit_log_failure_does_not_block_position_recording() {
+        // 2026-10-01 실사례: toss_order_id 컬럼 길이 초과(ORA-12899)로 saveLog가 예외를 던져
+        // 실제 체결된 매수가 포지션에 기록되지 않았고, "이미 보유 중" 체크가 안 돼 같은 종목을
+        // 틱마다 반복 매수(012330, 5회)로 이어짐. 감사로그 실패와 무관하게 포지션은 기록돼야 함.
+        AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4,
+                new AutoTradeProperties.Gate(35));
+        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
+        when(stateMapper.find()).thenReturn(stateWith(false));
+        TossOrder.Execution exec = new TossOrder.Execution("20", "50000", "1000000", "0", "0", null, null);
+        when(toss.placeOrder(any())).thenReturn(new TossOrder("ORD1", "005930", "BUY", "MARKET", "FILLED",
+                null, "20", "1000000", "KRW", null, null, exec));
+        doThrow(new RuntimeException("ORA-12899: value too large")).when(logMapper).insert(any());
+
+        boolean ok = liveExecutor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000));
+
+        assertThat(ok).isTrue();
+        verify(positionMapper).insert(argThat(p -> !p.isDryRun()));
+    }
+
+    @Test
     void sell_follows_position_dry_run_flag_not_global_state() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4,

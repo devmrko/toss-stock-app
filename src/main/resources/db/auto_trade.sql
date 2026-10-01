@@ -83,7 +83,7 @@ BEGIN
       dry_run           NUMBER(1)     NOT NULL,
       requested_qty     NUMBER,
       requested_price   NUMBER,
-      toss_order_id     VARCHAR2(50),
+      toss_order_id     VARCHAR2(200),
       success           NUMBER(1)     DEFAULT 1 NOT NULL,
       message           VARCHAR2(500),
       created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
@@ -92,5 +92,17 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     IF SQLCODE != -955 THEN RAISE; END IF;
+END;
+/
+
+-- 2026-10-01 버그 수정: 실제 Toss 주문체결 시 orderId가 86자까지 나오는데 컬럼이 50자라
+-- ORA-12899 발생 → saveLog()가 실패해서 "실제로 체결된 매수"가 기록도 안 되고, 그래서
+-- positionMapper.insert()까지 도달 못 해 포지션도 안 남음(이미 보유 중인지 체크가 안 돼
+-- 같은 종목을 틱마다 반복 매수하는 사고로 이어짐, 012330 5회 중복매수 실사례). 기존 테이블도 넓힘.
+BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE auto_trade_order_log MODIFY (toss_order_id VARCHAR2(200))';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -904 THEN RAISE; END IF; -- 컬럼 없음(아직 테이블 자체가 새로 생성된 경우) 무시
 END;
 /
