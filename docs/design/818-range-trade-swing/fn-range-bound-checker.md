@@ -46,7 +46,7 @@ Result evaluate(List<DailyOhlcv> window, RangeTradeProperties props)
 - O(N), N = windowDays(기본 60). 일 1회, 유동성 통과 종목 수만큼 호출 — 성능 이슈 없음(1분 틱이 아니므로 #808보다 여유 있음).
 
 ## 9. 의존성
-- `application.yml`의 `range-trade.window-days`(60), `range-trade.min-width-pct`(15.0), `range-trade.max-width-pct`(50.0), `range-trade.max-trend-drift-pct`(15.0) — **전부 초기 추정치, 확정 아님**(README §12).
+- `application.yml`의 `range-trade.window-days`(60), `range-trade.min-width-pct`(**26.0** — 2026-10-01 Ellman ROO 방식으로 역산, README §12 계산식 참고. 왕복비용 0.23%는 #808 195870 실측, 목표수익 3%는 가정값), `range-trade.max-width-pct`(50.0), `range-trade.max-trend-drift-pct`(15.0) — **`min-width-pct` 외엔 전부 초기 추정치, 확정 아님**(README §12).
 
 ## 10. 테스트 케이스
 - [ ] 정상: 인위적으로 생성한 왕복 패턴(예: 100↔120 반복) → `isRangeBound=true`, low=100/high=120 근사

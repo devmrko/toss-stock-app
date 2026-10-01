@@ -16,6 +16,7 @@
   - `RangeBoundChecker` — 종목이 실제로 추세 없이 박스권을 반복하는지 순수 판정.
   - `RangeTradeSignal` — 현재가 위치 기반 매수/익절매도/손절매도 순수 판정.
   - 강한 악재(S1/S2) 배제 게이트(#808 `NewsFadeDetector`의 반대 극성).
+  - **예정된 실적발표 제외 게이트**(신규, `EarningsCalendarGate`) — 보유 예상기간 내 실적발표가 껴있는 종목은 후보에서 제외(§4 Ellman 방법론 참고).
   - 유동성 게이트(#808 `LiquidityChecker` 그대로 재사용).
   - 일 1회 배치 스캔(전 유니버스 대상, `DailyOhlcvMapper` 배치 쿼리 패턴 재사용) + `OrderExecutor`와 동일한 이중 드라이런 안전장치를 갖는 신규 `RangeOrderExecutor`.
   - 독립된 상태/포지션/후보 테이블 — #808 모멘텀 트랙과 예산·슬롯·로직 완전 분리.
@@ -35,6 +36,9 @@
 
 ## 4. 컨텍스트 & 제약
 - **옵션 미지원 확인(2026-10-01)**: 토스증권 Open API corp 문서/제3자 가이드 교차 확인 결과 지원 기능은 시세조회/계좌/일반주문/조건부주문뿐, 옵션(파생상품) 없음. 그래서 Dr. Alan Ellman 식 "풋 매도로 하단 매수당하고 콜 매도로 상단 매도당하는" 옵션 프리미엄 전략은 애초에 불가 — 현물로 같은 모양(하단매수/상단매도)만 흉내.
+- **Ellman 방법론에서 차용한 2가지(2026-10-01, 사용자 지적)** — 옵션은 못 쓰지만 그의 "체계적 파라미터 설정 방식"은 유효함(실제 검증: thebluecollarinvestor.com):
+  1. **ROO(Return on Option) 2~4%/월 — 목표수익률 역산 방식**: Ellman은 밴드/행사가를 감으로 정하지 않고 "수수료 뗀 순수익이 월 2~4% 나오는가"를 먼저 정하고 거꾸로 종목/가격을 고른다. 이 원칙을 `min-width-pct`에 적용 — §7/§12에서 임의 추정치(15%) 대신 목표수익률 역산값(~26%)으로 교체.
+  2. **"Banned Stocks" — 예정된 실적발표 제외**: Ellman은 보유 예상기간 내 실적발표(그가 "위험한 월간 실적보고"라 부르는)가 껴있는 종목을 아예 후보에서 뺀다. 박스권이 아무리 예뻐도 실적 발표로 갭이 생기면 밴드가 순식간에 깨짐 — `EarningsCalendarGate`(신규)로 반영.
 - **기존 재사용 가능 자산**:
   - `DailyOhlcvMapper.peakTroughBatch(pairs)` — 이미 종목별 `fromDate` 이후 고가/저가를 배치로 가져오는 쿼리가 존재(`HoldingService`의 MDD 계산용). 레인지 상/하단 계산에 거의 그대로 재사용 가능 — 단, "최신 종가"와 "추세 유무" 판정에 필요한 통계는 없어서 새 배치 쿼리 하나 추가 필요(§7).
   - `LiquidityChecker`, `NewsSignals`, `StockNewsMapper.active()` — #808 것 그대로.
@@ -105,6 +109,7 @@
 | `RangeBoundChecker.evaluate` | 종목이 추세 없이 박스권을 반복하는지 + 밴드[저,고] 산출 | `Result evaluate(List<DailyOhlcv> window, RangeTradeProperties props)` | 일봉 리스트(window-days치) | `Result(isRangeBound, low, high)` | 데이터 부족 시 `isRangeBound=false` | **복잡** → `fn-range-bound-checker.md` |
 | `RangeTradeSignal.decide` | 매수/익절/손절 순수 판정 | `Signal decide(BigDecimal current, BigDecimal rangeLowAtEntry, BigDecimal rangeHighAtEntry, RangeTradeProperties props)` | 현재가, 진입시점 밴드 | `Signal(BUY\|PROFIT_TAKE\|RANGE_BREAKDOWN\|NONE)` | 입력값 이상(음수 등) → 예외 | **복잡** → `fn-range-trade-signal.md` |
 | `BadNewsGate.hasStrongBadNews` | 활성 뉴스 중 S1/S2(악재) 존재 여부 | `boolean hasStrongBadNews(String symbol)` | symbol | boolean | 조회 실패 시 안전 쪽(true=차단)? → §9 결정 필요 | 단순(`NewsFadeDetector`와 동일 패턴의 반대 극성) |
+| `EarningsCalendarGate.hasUpcomingEarnings` | 예상 보유기간 내 실적발표 예정 여부(Ellman "Banned Stocks") | `boolean hasUpcomingEarnings(String symbol, int holdingHorizonDays)` | symbol, 보유예상기간 | boolean | 실적일 데이터 소스 자체가 미확정(§12) — 조회 실패/데이터 없음 시 기본값도 §12에서 결정 | 단순(단, 데이터 소스 확정 전까지 TBD) |
 | `RangeOrderExecutor.buy`/`.sell` | 드라이런 분기 포함 주문 실행(포지션은 `range_trade_position`) | `boolean buy(String symbol, BigDecimal budget, BigDecimal currentPrice, BigDecimal rangeLow, BigDecimal rangeHigh)` 등 | - | boolean | 주문 실패 재시도 안 함(#808과 동일 원칙) | **복잡** → #808 `fn-order-executor.md`의 패턴을 그대로 참고해 구현하되 별도 설계서는 생략(동일 구조 반복 — 구현 시 그 문서를 "모델"로 명시) |
 | `RangeTradeScheduler.tick` | 한 틱(1일 1회)의 오케스트레이션 | `void tick()` | - | - | 개별 종목 예외는 해당 종목만 skip(전체 틱 안 죽도록 — #808에서 발견된 "한 종목 예외가 전체 틱을 죽임" 문제 재발 방지, §9) | 단순(호출만) |
 
@@ -114,7 +119,7 @@
 1. `@Scheduled` 1일 1회(장마감 후, 예: `0 0 16 * * MON-FRI` — `DailyCollector`의 일봉 갱신 15:40 이후로 버퍼를 둠).
 2. `range_trade_state` 로드. 서킷브레이커 트립 시 매도만 수행(#808과 동일 원칙).
 3. 보유 포지션(`HOLDING`) 각각: `BadNewsGate` 먼저 체크(S1/S2 있으면 즉시 `BAD_NEWS` 매도) → 없으면 `RangeTradeSignal.decide`로 `PROFIT_TAKE`/`RANGE_BREAKDOWN` 판정 → 매도 시 `RangeOrderExecutor.sell`.
-4. 빈 슬롯 있으면: `UniverseMapper.findAll()`(KR) → 유동성 통과 종목만 → `DailyOhlcvMapper.rangeStatsBatch(windowDays)`로 일괄 조회 → 종목별 `RangeBoundChecker.evaluate` → 레인지+하단위치 통과 + `BadNewsGate` 통과 종목 → `RangeOrderExecutor.buy`(이때 `range_low_at_entry`/`range_high_at_entry`를 **그 시점 값으로 고정 저장** — 이후 가격이 올라가도 바뀌지 않음, §9).
+4. 빈 슬롯 있으면: `UniverseMapper.findAll()`(KR) → 유동성 통과 종목만 → `DailyOhlcvMapper.rangeStatsBatch(windowDays)`로 일괄 조회 → 종목별 `RangeBoundChecker.evaluate` → 레인지+하단위치 통과 + `BadNewsGate` 통과 + **`EarningsCalendarGate` 통과(예상 보유기간 내 실적발표 없음)** 종목 → `RangeOrderExecutor.buy`(이때 `range_low_at_entry`/`range_high_at_entry`를 **그 시점 값으로 고정 저장** — 이후 가격이 올라가도 바뀌지 않음, §9).
 5. 모든 신호(스킵 포함) 로그 — #808에서 "설계서엔 다 기록한다 했는데 실제로 스킵 경로는 로그 안 남기는" 불일치가 있었음(README §11 참고) — 이 트랙은 처음부터 일치시킬지 결정 필요(§12).
 
 ## 9. 엣지케이스 & 에러 처리
@@ -137,12 +142,14 @@
 - **옵션 전략(Ellman 방식) 포기**: 토스증권이 옵션을 지원하지 않는 한 선택지가 없음 — 다른 브로커로 갈아타는 건 이 이슈 범위 밖.
 
 ## 12. 미해결 질문 (Open Questions)
-- **밴드 정의 파라미터 확정값 없음** — 아래는 초기 추정치, 실측/백테스트 전까지 확정 아님:
-  - `window-days` = 60(초기 제안)
-  - `min-width-pct`/`max-width-pct` = 15.0/50.0(초기 제안 — 너무 좁으면 거래비용 대비 안 남고, 너무 넓으면 진짜 박스권이 아닐 가능성)
-  - `max-trend-drift-pct` = 15.0(전반부/후반부 평균 종가 차이로 추세 유무 판정, 초기 제안)
-  - `entry-zone-pct`/`exit-zone-pct` = 10.0/10.0(밴드 하단/상단 근접 기준)
-  - `breakdown-pct` = 5.0(진입시점 하단 대비 추가 이탈폭 — 손절)
+- **밴드 정의 파라미터 — `min-width-pct`는 2026-10-01 Ellman 방식(ROO 목표수익률 역산)으로 재계산, 나머지는 여전히 초기 추정치**:
+  - `window-days` = 60(초기 제안, 확정 아님)
+  - **`min-width-pct` = 15.0 → 약 26.0으로 상향(역산)**: 왕복비용(#808 195870 실측: 60,000원 2주 왕복 136원 ≈ **0.23%**)에 Ellman의 월 2~4% ROO 관례를 참고한 목표 순수익 **3%**를 더한 3.25%가 "최악의 경우(진입구간 꼭대기에서 사서 익절구간 바닥에서 팜)"에도 남으려면, `entry-zone-pct`/`exit-zone-pct`=10/10 기준 밴드폭이 최소 **~26%**는 돼야 함(`worstCase = [(1+w)*0.9 - 1.1]/1.1 >= 0.0325` → `w >= 0.262`). **목표수익률(3%)은 여전히 가정값** — 사용자 확인 필요.
+  - `max-width-pct` = 50.0(초기 제안, 그대로 유지)
+  - `max-trend-drift-pct` = 15.0(초기 제안, 그대로)
+  - `entry-zone-pct`/`exit-zone-pct` = 10.0/10.0(초기 제안 — 위 역산의 전제값, 바뀌면 min-width-pct도 재계산 필요)
+  - `breakdown-pct` = 5.0(초기 제안, 그대로)
+- **`EarningsCalendarGate`의 데이터 소스 미정(신규)** — Ellman의 "Banned Stocks"(예정된 실적발표 제외)를 적용하려면 KR/US 종목의 "다음 실적발표 예정일"이 필요한데, 지금 쓰는 네이버/야후 비공식 API에 그 필드가 있는지 확인 안 됨 — Developer 단계에서 실제 API 응답으로 확인 필요(가정 금지, 이 프로젝트 관례).
 - **예산/슬롯 수** — #808처럼 실제 계좌 상황 보고 사용자가 정해야 함. 완전히 별도 풀로 둘지, 전체 예산 안에서 모멘텀과 나눠 쓸지도 미정.
 - **스캔 대상 유니버스 필터링 강도** — 3700+ 종목 전부 매일 `RangeBoundChecker` 돌리면 연산량이 꽤 됨, 유동성 1차 필터로 얼마나 줄어드는지 실측 필요.
 - **미국 시장 확장 여부** — v1은 KR만, US는 #808처럼 후속 이슈로 둘지 같이 설계할지.
