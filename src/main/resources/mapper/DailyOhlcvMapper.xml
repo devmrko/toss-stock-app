@@ -79,6 +79,35 @@
         GROUP BY d.symbol
     </select>
 
+    <!--
+      #818 레인지 스캔용 윈도우 통계 배치(쿼리 1번으로 KR 유니버스 전체).
+      종목별로 최신 거래일부터 windowBars 개만 잘라(rn) 고가/저가/최신종가/전반부·후반부 종가평균을 집계.
+      전반부(과거쪽) = rn > FLOOR(windowBars/2) — 홀수개면 중간 1개가 전반부에 포함(fn-range-bound-checker §7과 동일 규칙).
+      universe 조인으로 KR 종목만(v1 범위). 데이터 부족 종목은 HAVING 에서 탈락.
+    -->
+    <select id="rangeStatsBatch" resultType="com.cloudhandson.tossstock.market.DailyRangeStats">
+        WITH w AS (
+            SELECT d.symbol, d.high_p, d.low_p, d.close_p,
+                   ROW_NUMBER() OVER (PARTITION BY d.symbol ORDER BY d.trade_date DESC) rn
+            FROM daily_ohlcv d
+            JOIN universe u ON u.symbol = d.symbol
+            WHERE d.trade_date &gt;= #{fromDate}
+              AND d.high_p IS NOT NULL AND d.low_p IS NOT NULL AND d.close_p IS NOT NULL
+        )
+        SELECT symbol                                                            AS symbol,
+               COUNT(*)                                                          AS bar_count,
+               MAX(high_p)                                                       AS max_high,
+               MIN(low_p)                                                        AS min_low,
+               MAX(CASE WHEN rn = 1 THEN close_p END)                            AS last_close,
+               AVG(CASE WHEN rn &gt; FLOOR(#{windowBars} / 2) THEN close_p END)  AS first_half_avg_close,
+               AVG(CASE WHEN rn &lt;= FLOOR(#{windowBars} / 2) THEN close_p END) AS second_half_avg_close
+        FROM w
+        WHERE rn &lt;= #{windowBars}
+        GROUP BY symbol
+        HAVING COUNT(*) &gt;= #{windowBars}
+        ORDER BY symbol
+    </select>
+
     <select id="breadth" resultType="map">
         WITH covered AS (
             SELECT trade_date

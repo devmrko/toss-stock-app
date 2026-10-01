@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cloudhandson.tossstock.rangetrade.RangeTradePositionMapper">
+
+    <sql id="cols">
+        id, symbol, market, status, entry_price, entry_qty, entry_at,
+        range_low_at_entry, range_high_at_entry, budget_allocated,
+        exit_price, exit_reason, exit_at, dry_run, created_at
+    </sql>
+
+    <select id="findHolding" resultType="com.cloudhandson.tossstock.rangetrade.RangeTradePosition">
+        SELECT <include refid="cols"/>
+        FROM range_trade_position
+        WHERE status = 'HOLDING'
+        ORDER BY id
+    </select>
+
+    <select id="findAll" resultType="com.cloudhandson.tossstock.rangetrade.RangeTradePosition">
+        SELECT <include refid="cols"/>
+        FROM range_trade_position
+        ORDER BY id
+    </select>
+
+    <select id="findById" resultType="com.cloudhandson.tossstock.rangetrade.RangeTradePosition">
+        SELECT <include refid="cols"/>
+        FROM range_trade_position
+        WHERE id = #{id}
+    </select>
+
+    <select id="countHolding" resultType="int">
+        SELECT COUNT(*) FROM range_trade_position WHERE status = 'HOLDING'
+    </select>
+
+    <!-- Oracle IDENTITY 키 반환: keyColumn 명시 필수(미지정 시 ROWID 반환 → ORA-17132) -->
+    <insert id="insert" parameterType="com.cloudhandson.tossstock.rangetrade.RangeTradePosition"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
+        INSERT INTO range_trade_position
+            (symbol, market, status, entry_price, entry_qty, entry_at,
+             range_low_at_entry, range_high_at_entry, budget_allocated, dry_run, created_at)
+        VALUES
+            (#{symbol}, #{market}, 'HOLDING', #{entryPrice}, #{entryQty}, #{entryAt},
+             #{rangeLowAtEntry}, #{rangeHighAtEntry}, #{budgetAllocated}, #{dryRun}, CURRENT_TIMESTAMP)
+    </insert>
+
+    <update id="markExited">
+        UPDATE range_trade_position
+        SET status = 'EXITED', exit_price = #{exitPrice}, exit_reason = #{exitReason}, exit_at = #{exitAt}
+        WHERE id = #{id}
+    </update>
+
+</mapper>

@@ -39,7 +39,8 @@ public class SchemaInitializer implements ApplicationRunner {
             "db/stock_news.sql",   // stock_news
             "db/us_universe.sql",  // us_universe
             "db/broker.sql",       // broker_ref (#442)
-            "db/auto_trade.sql"    // auto_trade_* (#808)
+            "db/auto_trade.sql",   // auto_trade_* (#808)
+            "db/range_trade.sql"   // range_trade_* (#818 레인지 스윙매매, #808과 분리된 테이블)
     );
 
     private final JdbcTemplate jdbc;

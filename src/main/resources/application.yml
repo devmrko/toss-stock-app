@@ -123,6 +123,37 @@ auto-trade:
     # max-s1-count/lookback-days 설정 제거 — breadth만으로 판정.
     min-breadth-pct: ${AUTO_TRADE_GATE_MIN_BREADTH:20}
 
+# 레인지(박스권) 스윙매매 — 2번째 자동매매 트랙 (#818). 모멘텀(#808)과 예산·슬롯·DB 완전 분리.
+# dry-run 기본값 true — 반드시 명시적으로 false 로 바꿔야 실주문 나감.
+# DB range_trade_state.dry_run 도 별도 존재(이중 안전장치, RangeOrderExecutor#effectiveDryRun 참고).
+range-trade:
+  dry-run: ${RANGE_TRADE_DRY_RUN:true}
+  # 2026-10-01 사용자 결정: 기존 400만원을 모멘텀 300만/레인지 100만으로 재분배(설계서 §12).
+  total-budget: ${RANGE_TRADE_TOTAL_BUDGET:1000000}
+  # 슬롯 2개 × 50만원(Developer 단계 확정). 왜 2슬롯인가:
+  #  - 원칙 §5(소수 집중)와 100만원 예산의 교집합 — 3슬롯(33만원)이면 1종목당 금액이 너무 작아져
+  #    주가 10만원대 종목은 3주밖에 못 사고, 수량 반올림 버림(정수 주)이 예산의 1/3까지 낭비될 수 있음.
+  #  - 목표 순수익 3%(설계서 §12 역산 전제)가 50만원 기준 1.5만원/회로 유의미한 크기.
+  #  - 1슬롯이면 종목 하나에 전액이 걸려 분산이 0이라 제외.
+  max-symbols: ${RANGE_TRADE_MAX_SYMBOLS:2}
+  per-symbol-budget: ${RANGE_TRADE_PER_SYMBOL_BUDGET:500000}
+  # 밴드 판정 파라미터 — 설계서 §12 확정값. min-width-pct 만 Ellman ROO 역산값(왕복비용 0.23% 실측 +
+  # 목표 순수익 3% 가정 → 폭 26% 이상이어야 최악의 진입/청산 조합에서도 남음), 나머지는 초기 추정치.
+  window-days: ${RANGE_TRADE_WINDOW_DAYS:60}
+  min-width-pct: ${RANGE_TRADE_MIN_WIDTH_PCT:26.0}
+  max-width-pct: ${RANGE_TRADE_MAX_WIDTH_PCT:50.0}
+  max-trend-drift-pct: ${RANGE_TRADE_MAX_TREND_DRIFT_PCT:15.0}
+  entry-zone-pct: ${RANGE_TRADE_ENTRY_ZONE_PCT:10.0}
+  exit-zone-pct: ${RANGE_TRADE_EXIT_ZONE_PCT:10.0}
+  breakdown-pct: ${RANGE_TRADE_BREAKDOWN_PCT:5.0}
+  # 유동성 게이트 — #808 과 동일 기준(LiquidityChecker 재사용, 설계서 §4).
+  min-avg-trading-value: ${RANGE_TRADE_MIN_AVG_TRADING_VALUE:300000000}
+  # Ellman "Banned Stocks" 게이트의 예상 보유기간(일). 그의 월간 옵션 주기(약 30일)를 차용한 가정값.
+  holding-horizon-days: ${RANGE_TRADE_HOLDING_HORIZON_DAYS:30}
+  webhook-url: ${DISCORD_WEBHOOK_URL:}
+  # 1일 1회, 장마감 후. DailyCollector 의 일봉 갱신(15:40) 이후로 버퍼를 둔 16:00(설계서 §8).
+  cron: ${RANGE_TRADE_CRON:0 0 16 * * MON-FRI}
+
 logging:
   level:
     com.cloudhandson.tossstock: INFO

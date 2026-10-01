@@ -1,7 +1,8 @@
 # 함수 설계서: `RangeTradeSignal.decide` (#818)
 
 > **부모 설계서**: ./README.md · **상태**: Approved
-> **작성**: [AI] Architect · **구현**: `com.cloudhandson.tossstock.rangetrade.RangeTradeSignal`(TBD) · **테스트**: `RangeTradeSignalTest`(TBD)
+> **작성**: [AI] Architect · **구현**: `com.cloudhandson.tossstock.rangetrade.RangeTradeSignal` · **테스트**: `RangeTradeSignalTest`(10건)
+> **2026-10-01 Developer 정정**: §10 마지막 항목의 부등호 오기 수정(아래 참고).
 
 ## 1. 시그니처
 ```java
@@ -62,7 +63,8 @@ Signal decide(BigDecimal current, BigDecimal rangeLowAtEntry, BigDecimal rangeHi
 - [ ] 정상: 보유, `current`가 진입시점 하단보다 5% 이상 낮음 → `RANGE_BREAKDOWN`
 - [ ] 경계: `current == entryCeiling` → `BUY`(포함), `current == breakdownFloor` → `RANGE_BREAKDOWN`(포함)
 - [ ] 실패: `current <= 0` 또는 `rangeLowAtEntry >= rangeHighAtEntry` → 예외
-- [ ] 설정 검증: 기본 파라미터(entry 10%/exit 10%/breakdown 5%)로 `entryCeiling < breakdownFloor`가 항상 성립하는지 — 안 그러면 진입 직후 바로 손절되는 모순 상황 발생 가능(README §9), 이 조합이 실제로 안전한지 수치로 확인하는 테스트 1건 추가.
+- [x] 설정 검증: ~~기본 파라미터(entry 10%/exit 10%/breakdown 5%)로 `entryCeiling < breakdownFloor`가 항상 성립하는지~~ — **2026-10-01 Developer 정정: 부등호 오기**. `entryCeiling = 하단×1.10`, `breakdownFloor = 하단×0.95` 이므로 구조적으로 **항상 `entryCeiling > breakdownFloor`** 이고, 설계서 문장대로는 성립할 수가 없다. 실제로 확인해야 하는 안전 조건은 **"진입구간의 어떤 가격에 사도 즉시 손절/익절이 터지지 않는다"** = `breakdownFloor < entryCeiling < profitFloor`. 기본 파라미터로 밴드[100,130]이면 95 < 110 < 117 로 성립하며, 진입 상한(110)에 사도 손절선(95)까지는 -13.6% 여유가 있다. `RangeTradeSignalTest#default_parameters_cannot_trigger_immediate_exit_at_entry`가 이걸 수치로 검증한다.
+- [x] 추가(2026-10-01 Developer): 최소 밴드폭에서의 최악 왕복 수익성 검증 — `RangeTradeSignalTest#worst_case_round_trip_at_min_band_width_still_profitable`. 참고로 README §12의 역산은 폭을 **하단 대비**(`w=(high-low)/low`)로 계산했지만 `RangeBoundChecker`는 fn 설계서 §5대로 **중간값 대비**로 계산한다 → 같은 `26.0` 임계값이 구현에선 더 엄격(하단 대비 29.9%)이고, 최악 순수익도 역산값 3.25%보다 여유 있게 나온다(≈6.0%). 안전한 방향의 차이라 파라미터는 그대로 둔다.
 
 ## 11. 추적성
 - 인수조건: #818 "밴드 하단 근처일 때만 매수", "상단 근처 익절 / 진입시점 하단 이탈 손절".

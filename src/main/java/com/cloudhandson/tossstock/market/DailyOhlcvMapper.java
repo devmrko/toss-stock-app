@@ -35,4 +35,11 @@ public interface DailyOhlcvMapper {
 
     /** 종목의 fromDate 이후 최고가/최저가. {MAXHIGH, MINLOW}. */
     Map<String, Object> rangeSince(@Param("symbol") String symbol, @Param("fromDate") LocalDate fromDate);
+
+    /**
+     * KR 유니버스 전 종목의 "최근 windowBars 거래일" 윈도우 통계 일괄 조회(#818 레인지 스캔 1차 스크리닝).
+     * fromDate 는 스캔 범위를 줄이기 위한 하한(windowBars 개를 담을 만큼 넉넉히 줄 것).
+     */
+    List<DailyRangeStats> rangeStatsBatch(@Param("fromDate") LocalDate fromDate,
+                                          @Param("windowBars") int windowBars);
 }

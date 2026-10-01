@@ -1,7 +1,8 @@
 # 함수 설계서: `RangeBoundChecker.evaluate` (#818)
 
 > **부모 설계서**: ./README.md · **상태**: Approved
-> **작성**: [AI] Architect · **구현**: `com.cloudhandson.tossstock.rangetrade.RangeBoundChecker`(TBD) · **테스트**: `RangeBoundCheckerTest`(TBD)
+> **작성**: [AI] Architect · **구현**: `com.cloudhandson.tossstock.rangetrade.RangeBoundChecker` · **테스트**: `RangeBoundCheckerTest`(12건)
+> **2026-10-01 Developer 보완**: §10 첫 케이스의 예시 밴드가 §9의 `min-width-pct` 상향(15→26)과 어긋나 있어 정정(아래 참고).
 
 ## 1. 시그니처
 ```java
@@ -34,6 +35,7 @@ Result evaluate(List<DailyOhlcv> window, RangeTradeProperties props)
 |------|------|-----------|
 | `window`가 `null` 또는 길이 부족 | 데이터 부족 | `isRangeBound=false` (fail-closed) |
 | `window` 내 `high_p`/`low_p`가 일부 `null` | 해당 레코드 제외하고 계산, 유효 레코드가 부족해지면 데이터 부족과 동일 처리 | `isRangeBound=false` |
+| `close_p` 또는 `trade_date`가 `null` | 2026-10-01 Developer 보완 — 종가는 추세 드리프트(전반부/후반부 평균) 계산에, 거래일은 내부 정렬에 반드시 필요하므로 **같이 제외 대상**에 포함 | `isRangeBound=false` |
 | `props`가 `null` | 호출측 책임(방어 안 함) | `NullPointerException` 허용 |
 
 ## 7. 엣지케이스
@@ -49,12 +51,13 @@ Result evaluate(List<DailyOhlcv> window, RangeTradeProperties props)
 - `application.yml`의 `range-trade.window-days`(60), `range-trade.min-width-pct`(**26.0** — 2026-10-01 Ellman ROO 방식으로 역산, README §12 계산식 참고. 왕복비용 0.23%는 #808 195870 실측, 목표수익 3%는 가정값), `range-trade.max-width-pct`(50.0), `range-trade.max-trend-drift-pct`(15.0) — **`min-width-pct` 외엔 전부 초기 추정치, 확정 아님**(README §12).
 
 ## 10. 테스트 케이스
-- [ ] 정상: 인위적으로 생성한 왕복 패턴(예: 100↔120 반복) → `isRangeBound=true`, low=100/high=120 근사
-- [ ] 실패: 지속 하락 종목(매일 전일보다 낮음) → `isRangeBound=false`(추세 드리프트 초과)
-- [ ] 실패: 너무 좁은 밴드(폭 5% 미만) → `isRangeBound=false`
-- [ ] 실패: 너무 넓은 밴드(폭 60% 초과) → `isRangeBound=false`
-- [ ] 실패: 데이터 부족(windowDays 미만) → `isRangeBound=false`
-- [ ] 경계: 폭/드리프트가 정확히 임계값과 일치 → 통과(`<=`/`>=` 방향 명확히)
+- [x] 정상: 인위적으로 생성한 왕복 패턴 → `isRangeBound=true`, 정확한 밴드값. **2026-10-01 Developer 정정**: 원래 예시(100↔120)는 폭이 18.2%(중간값 기준)라 `min-width-pct`가 15→26으로 상향된 뒤엔 오히려 **탈락**해야 하는 값이다(§9 변경 시 이 예시가 함께 갱신되지 않았음). 테스트는 100↔130(26.09%)으로 통과 케이스를, 100↔120으로 "왕복비용/목표수익 미달 탈락" 케이스를 각각 검증한다.
+- [x] 실패: 지속 하락 종목(매일 전일보다 낮음) → `isRangeBound=false`(추세 드리프트 초과)
+- [x] 실패: 너무 좁은 밴드(폭 5% 미만, 테스트는 100↔102=2.0%) → `isRangeBound=false`
+- [x] 실패: 너무 넓은 밴드(폭 60% 초과, 테스트는 100↔200=66.7%) → `isRangeBound=false`
+- [x] 실패: 데이터 부족(windowDays+1 미만, `null`/빈 리스트/고가·저가·종가 `null` 섞임 포함) → `isRangeBound=false`
+- [x] 경계: 폭/드리프트가 정확히 임계값과 일치 → 통과(테스트: low=87/high=113 → 폭 정확히 26.0%, 전반부 종가 92.5·후반부 107.5 → 드리프트 정확히 15.0%)
+- [x] 추가(2026-10-01 Developer): 입력 순서 무관(내부 정렬), 입력 리스트 비변형(순수성), 홀수 윈도우에서 중간 1개가 전반부에 포함되는 규칙(§7), 완전 횡보(폭 0%) 탈락
 
 ## 11. 추적성
 - 인수조건: #818 "추세가 뚜렷한 종목은 탈락한다".

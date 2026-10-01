@@ -21,6 +21,9 @@ public interface UniverseMapper {
     /** 6자리 코드 → 섹터. 없으면 null. */
     String findSectorBySymbol(@org.apache.ibatis.annotations.Param("symbol") String symbol);
 
+    /** 6자리 코드 → 시장 구분(KOSPI/KOSDAQ/ETF). 없으면 null. #818 야후 티커 서픽스(.KS/.KQ) 결정용. */
+    String findMarketBySymbol(@org.apache.ibatis.annotations.Param("symbol") String symbol);
+
     /** 여러 코드 → {symbol, sector} 일괄(N+1 제거). */
     List<Universe> sectorsForSymbols(@org.apache.ibatis.annotations.Param("symbols") List<String> symbols);
 

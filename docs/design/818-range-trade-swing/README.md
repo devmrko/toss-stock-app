@@ -3,8 +3,14 @@
 > **상태**: Approved
 > **작성**: [AI] Architect · **최종수정**: 2026-10-01
 > **추적성** — Redmine: #818 · 관련: #808(기존 모멘텀 자동매매 엔진), 관련 ADR: 없음
-> · 구현 파일(예정): `src/main/java/com/cloudhandson/tossstock/rangetrade/**`
-> · 테스트(예정): `src/test/java/com/cloudhandson/tossstock/rangetrade/**`
+> · 구현 파일: `src/main/java/com/cloudhandson/tossstock/rangetrade/**`,
+>   `src/main/resources/mapper/RangeTrade*.xml`, `src/main/resources/db/range_trade.sql`,
+>   `DailyOhlcvMapper.rangeStatsBatch`(+XML), `UniverseMapper.findMarketBySymbol`(+XML),
+>   `application.yml` `range-trade:` 섹션
+> · 테스트: `src/test/java/com/cloudhandson/tossstock/rangetrade/**`
+>   (`RangeBoundCheckerTest` 12건, `RangeTradeSignalTest` 10건, `RangeOrderExecutorTest` 11건,
+>   `RangeTradeSchedulerTest` 6건 — 총 39건 신규, 전체 181건 통과)
+> · 레퍼런스: `docs/reference/range-trade.md`
 
 ## 1. 목적 (Why)
 #808의 모멘텀 엔진(뉴스호재+가격돌파로 사서 추세를 따라가는 전략)과 **반대 철학**의 2번째 트랙을 추가한다 — 추세 없이 일정 밴드 안에서 반복 왕복하는(박스권) 종목을, 밴드 하단에서 사서 상단에서 파는 평균회귀 스윙매매. 사용자가 대화 중 직접 게이트 순서를 제시했고(유동성→레인지확인→하단위치→악재없음→익절/손절), 이 설계서는 그걸 그대로 구현 가능한 형태로 구체화한다.
@@ -69,6 +75,7 @@
            └─► dryRun=false → TossApiClient.placeOrder(...) 실호출 + range_trade_position 기록
 ```
 - **I/O ↔ 순수 로직 경계**: `RangeBoundChecker.evaluate`, `RangeTradeSignal.decide`는 순수 함수(이미 조회된 일봉/가격을 받아 판정만). DB/HTTP는 `RangeTradeScheduler`/`RangeOrderExecutor`/`*Mapper`에 격리 — #808과 동일 원칙.
+- **구현 보완(2026-10-01 Developer)**: 위 다이어그램의 "`UniverseMapper.findAll()`(KR) 중 유동성 통과 종목만"은 종목별 조회가 되어 3,700+ 종목에 N+1이 된다. 실제 구현은 `rangeStatsBatch`가 **`universe` 조인으로 KR 범위를 제한하며 쿼리 1번에 윈도우 통계를 집계**하고, 1차 스크리닝을 통과한 종목만 실제 일봉을 청크로 받아 `LiquidityChecker`·`RangeBoundChecker`로 최종 판정한다(깔때기 실측치는 §12).
 
 ## 6. 데이터 모델
 
@@ -97,7 +104,7 @@
 ### `range_trade_state` (싱글턴, #808 `auto_trade_state`와 분리 — 독립 예산/서킷브레이커)
 | 컬럼 | 설명 |
 |---|---|
-| total_budget, max_symbols, dry_run, circuit_breaker_tripped 등 | `auto_trade_state`와 동일 구조, 완전히 별도 행/테이블. **total_budget=1,000,000**(2026-10-01 확정, §11). max_symbols/per-symbol 배분은 Developer 단계에서 확정. |
+| total_budget, max_symbols, dry_run, circuit_breaker_tripped 등 | `auto_trade_state`와 동일 구조, 완전히 별도 행/테이블. **total_budget=1,000,000**(2026-10-01 확정, §11). **max_symbols=2, per_symbol_budget=500,000**(2026-10-01 Developer 확정, §12). 서킷브레이커 컬럼은 존재하지만 자동 트립 로직은 v1 미구현(§12). |
 
 ### `range_trade_order_log` (#808 `auto_trade_order_log`와 동일 구조, 분리된 테이블)
 - 2026-10-01 #808 사고(toss_order_id 길이초과로 포지션 유실) 교훈 반영 — **처음부터 `toss_order_id VARCHAR2(200)`으로 생성**.
@@ -107,9 +114,9 @@
 | 함수 | 책임(1줄) | 시그니처(잠정) | 입력 | 출력 | 에러/실패 | 복잡? |
 |------|-----------|----------------|------|------|-----------|-------|
 | `RangeBoundChecker.evaluate` | 종목이 추세 없이 박스권을 반복하는지 + 밴드[저,고] 산출 | `Result evaluate(List<DailyOhlcv> window, RangeTradeProperties props)` | 일봉 리스트(window-days치) | `Result(isRangeBound, low, high)` | 데이터 부족 시 `isRangeBound=false` | **복잡** → `fn-range-bound-checker.md` |
-| `RangeTradeSignal.decide` | 매수/익절/손절 순수 판정 | `Signal decide(BigDecimal current, BigDecimal rangeLowAtEntry, BigDecimal rangeHighAtEntry, RangeTradeProperties props)` | 현재가, 진입시점 밴드 | `Signal(BUY\|PROFIT_TAKE\|RANGE_BREAKDOWN\|NONE)` | 입력값 이상(음수 등) → 예외 | **복잡** → `fn-range-trade-signal.md` |
-| `BadNewsGate.hasStrongBadNews` | 활성 뉴스 중 S1/S2(악재) 존재 여부 | `boolean hasStrongBadNews(String symbol)` | symbol | boolean | 조회 실패 시 안전 쪽(true=차단)? → §9 결정 필요 | 단순(`NewsFadeDetector`와 동일 패턴의 반대 극성) |
-| `EarningsCalendarGate.hasUpcomingEarnings` | 예상 보유기간 내 실적발표 예정 여부(Ellman "Banned Stocks") | `boolean hasUpcomingEarnings(String symbol, int holdingHorizonDays)` | symbol, 보유예상기간 | boolean | 실적일 데이터 소스 자체가 미확정(§12) — 조회 실패/데이터 없음 시 기본값도 §12에서 결정 | 단순(단, 데이터 소스 확정 전까지 TBD) |
+| `RangeTradeSignal.decide` | 매수/익절/손절 순수 판정 | `Signal decide(BigDecimal current, BigDecimal rangeLowAtEntry, BigDecimal rangeHighAtEntry, boolean holding, RangeTradeProperties props)` (구현 확정 시그니처 — fn 설계서 §1과 동일, 이 표에서 `holding`이 빠져 있었음) | 현재가, 진입시점 밴드, 보유여부 | `Signal(BUY\|PROFIT_TAKE\|RANGE_BREAKDOWN\|NONE)` | 입력값 이상(음수 등) → 예외 | **복잡** → `fn-range-trade-signal.md` |
+| `BadNewsGate.hasStrongBadNews` | 활성 뉴스 중 S1/S2(악재) 존재 여부 | `boolean hasStrongBadNews(String symbol)` | symbol | boolean | **2026-10-01 구현 확정: 조회 실패 시 `false`(차단 안 함, fail-open)** — §9 추천안 채택 | 단순(`NewsFadeDetector`와 동일 패턴의 반대 극성) |
+| `EarningsCalendarGate.hasUpcomingEarnings` | 예상 보유기간 내 실적발표 예정 여부(Ellman "Banned Stocks") | `boolean hasUpcomingEarnings(String symbol, int holdingHorizonDays)` | symbol, 보유예상기간 | boolean | **2026-10-01 실측으로 확정: 야후 `calendarEvents`(KR은 `.KS`/`.KQ` 서픽스) 사용, 데이터 없음/실패 시 통과(fail-open)** — 네이버엔 쓸 수 있는 필드 없음(§12) | 단순 |
 | `RangeOrderExecutor.buy`/`.sell` | 드라이런 분기 포함 주문 실행(포지션은 `range_trade_position`) | `boolean buy(String symbol, BigDecimal budget, BigDecimal currentPrice, BigDecimal rangeLow, BigDecimal rangeHigh)` 등 | - | boolean | 주문 실패 재시도 안 함(#808과 동일 원칙) | **복잡** → #808 `fn-order-executor.md`의 패턴을 그대로 참고해 구현하되 별도 설계서는 생략(동일 구조 반복 — 구현 시 그 문서를 "모델"로 명시) |
 | `RangeTradeScheduler.tick` | 한 틱(1일 1회)의 오케스트레이션 | `void tick()` | - | - | 개별 종목 예외는 해당 종목만 skip(전체 틱 안 죽도록 — #808에서 발견된 "한 종목 예외가 전체 틱을 죽임" 문제 재발 방지, §9) | 단순(호출만) |
 
@@ -133,6 +140,7 @@
 - `RangeBoundCheckerTest`: 명확한 추세 종목(지속 상승/하락) → false, 반복 왕복 패턴(인위적 데이터) → true + 정확한 밴드값, 데이터 부족 → false.
 - `RangeTradeSignalTest`: 하단 근처 → BUY, 상단 근처 보유중 → PROFIT_TAKE, 진입시점 하단 -5% 이탈 → RANGE_BREAKDOWN, 밴드 중간 → NONE, 경계값(정확히 임계선).
 - `RangeOrderExecutorTest`: #808 `OrderExecutorTest`와 동일한 안전 테스트 세트(dryRun 이중 안전장치, 예산 초과 차단) — **감사로그 실패해도 포지션 기록은 진행**(#808에서 바로 고친 그 패턴을 처음부터 반영, §11).
+- `RangeTradeSchedulerTest`(2026-10-01 Developer 추가, 6건): 틱 오케스트레이션 내구성 — `range_trade_state` 없음→무동작, **보유 종목 1건 처리 중 예외가 다른 종목 점검과 신규 스캔을 막지 않음**(§9 재발 방지 조건을 테스트로 고정), 악재 즉시매도, 하단이탈 손절, 서킷브레이커 트립 시 매도만 수행, 빈 슬롯 없으면 스캔 생략.
 - 통합: 실주문 API 호출 테스트는 작성 안 함(#808과 동일 원칙).
 
 ## 11. 리스크 & 대안 검토
@@ -149,8 +157,26 @@
   - `max-trend-drift-pct` = 15.0(초기 제안, 그대로)
   - `entry-zone-pct`/`exit-zone-pct` = 10.0/10.0(초기 제안 — 위 역산의 전제값, 바뀌면 min-width-pct도 재계산 필요)
   - `breakdown-pct` = 5.0(초기 제안, 그대로)
-- **`EarningsCalendarGate`의 데이터 소스 미정(신규)** — Ellman의 "Banned Stocks"(예정된 실적발표 제외)를 적용하려면 KR/US 종목의 "다음 실적발표 예정일"이 필요한데, 지금 쓰는 네이버/야후 비공식 API에 그 필드가 있는지 확인 안 됨 — Developer 단계에서 실제 API 응답으로 확인 필요(가정 금지, 이 프로젝트 관례).
+- ~~**`EarningsCalendarGate`의 데이터 소스 미정(신규)**~~ → **2026-10-01 Developer 단계 실측으로 해소**. Ellman의 "Banned Stocks"(예정된 실적발표 제외)를 적용하려면 "다음 실적발표 예정일"이 필요한데, 실제 API를 호출해 확인한 결과:
+  - **네이버(KR) — 사용 불가**: `m.stock.naver.com/api/stock/{code}/integration` 응답에 `irScheduleInfo` 필드가 **존재하지만** 실측 10종목(005930·000660·035420·005380·012330·051910·068270·207940·035720·105560) 전부 `null`. `shareholdersMeetingInfo`도 전부 `null`. KR 실적일 소스로 못 씀.
+  - **야후 — 사용 가능(KR 포함)**: `query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=calendarEvents` 가 `calendarEvents.earnings.earningsDate[].fmt` 로 다음 실적발표일을 돌려줌. **국내 종목도 서픽스를 붙이면 됨**(실측: `005930.KS`=2026-10-28, `035720.KS`=2026-11-06, `000660.KS`=2026-10-27(추정), `247540.KQ`=2026-10-30(추정), `AAPL`=2026-10-29). 단 `058470.KQ` 처럼 `earningsDate`가 빈 배열인 종목도 있고, `isEarningsDateEstimate=true`(추정치)인 경우가 흔함.
+  - **구현 결정**: 야후 `calendarEvents` 를 소스로 사용(서픽스는 `universe.market`으로 KOSDAQ→`.KQ`, 그 외→`.KS`. 이를 위해 `UniverseMapper.findMarketBySymbol` 추가). **데이터 없음/조회 실패 시에는 차단하지 않고 통과(fail-open)** — 억지로 다른 소스를 만들지 않음. 반대로 **추정치(`isEarningsDateEstimate=true`)는 보수적으로 "예정 있음"으로 취급해 차단**한다(스킵의 비용은 기회비용뿐, 실적 갭의 비용은 실손실이라 비대칭).
+  - **예상 보유기간**: `holding-horizon-days=30`(Ellman의 월간 옵션 주기 차용 — **가정값**).
 - ~~예산/슬롯 수~~ → **2026-10-01 해소**: 기존 400만원 예산을 모멘텀(#808) 300만/레인지(#818) 100만으로 재분배(사용자 결정). `range_trade_state.total_budget=1,000,000`으로 구현. 슬롯 수는 Developer 단계에서 per-symbol 예산 설계와 함께 확정(예: 2~3슬롯×33~50만원). 모멘텀 쪽은 `auto-trade.total-budget`을 4,000,000→3,000,000, `per-symbol-budget`을 800,000→600,000으로 즉시 반영·배포 완료(DB `auto_trade_state`도 갱신). 단, 현재 012330 포지션에 377만원이 묶여있어(매수가능금액 22만원뿐) 당장은 숫자상 재분배일 뿐 — 포지션 매도로 현금이 풀려야 레인지 트랙에 실제 자금이 들어감.
-- **스캔 대상 유니버스 필터링 강도** — 3700+ 종목 전부 매일 `RangeBoundChecker` 돌리면 연산량이 꽤 됨, 유동성 1차 필터로 얼마나 줄어드는지 실측 필요.
+  - **슬롯 수 확정(2026-10-01 Developer)**: `max-symbols=2`, `per-symbol-budget=500,000`. 3슬롯(33만원)은 1종목당 금액이 작아져 10만원대 주가 종목이 3주밖에 안 되고 정수 주 반올림 버림으로 예산의 최대 1/3이 유휴가 됨. 목표 순수익 3%가 50만원 기준 1.5만원/회로 유의미한 크기이고, 1슬롯은 분산이 0이라 제외 → 2슬롯.
+  - **유동성 임계값(2026-10-01 Developer)**: `min-avg-trading-value=300,000,000`(#808과 동일 기준 — `LiquidityChecker`를 그대로 재사용하므로 기준도 같게 시작).
+- ~~**스캔 대상 유니버스 필터링 강도**~~ → **2026-10-01 Developer 단계 실측으로 해소**. 2026-10-01 기준 실제 DB로 측정한 깔때기(윈도우 60거래일):
+  | 단계 | 종목 수 |
+  |---|---|
+  | KR 유니버스 중 일봉 61개 이상 | 3,709 |
+  | 유동성 통과(평균 거래대금 ≥ 3억) | 2,130 |
+  | 밴드폭 26~50% | 786 |
+  | + 추세 드리프트 ≤ 15% | 742 |
+  | + 최신 종가가 진입구간(하단+10%) 안 | 133 |
+  | (유동성 필터 없이 폭+드리프트+진입구간만) | 279 |
+
+  구현은 **2단계**로 간다: ① `DailyOhlcvMapper.rangeStatsBatch`(쿼리 1번)로 전 종목 윈도우 통계를 받아 Java에서 느슨한 1차 스크리닝(≈279종목) → ② 살아남은 종목만 실제 일봉을 청크(≤900종목/쿼리)로 받아 `LiquidityChecker`+`RangeBoundChecker.evaluate`로 **최종 판정**. 1차 스크리닝은 성능용이고 판정 권한이 없다 — 두 경로가 어긋나면 후보가 누락될 뿐(false negative) 잘못된 매수로는 이어지지 않는다.
+- **신규 후보의 "현재가" 소스 결정(2026-10-01 Developer)** — 보유 포지션(최대 2종목)은 `PriceCache`(실시간 시세)를 쓰지만, **신규 후보는 윈도우의 최신 종가**를 현재가로 쓴다. 이유: ① 장마감 후 1일 1회 배치라 최신 종가 = 현재가, ② 밴드와 가격을 같은 일봉 스냅샷에서 뽑아 내부 일관성 유지, ③ 후보 수백 종목에 시세 API를 때리면 **실거래 중인 #808 모멘텀 엔진과 같은 토스 API 레이트리밋(429 실사례 있음)을 건드릴 수 있음**.
 - **미국 시장 확장 여부** — v1은 KR만, US는 #808처럼 후속 이슈로 둘지 같이 설계할지.
-- **스킵 경로 로깅 수준** — #808에서 "설계서는 전부 로그 남긴다 했는데 코드는 안 남김" 불일치가 있었음(README §11) — 이 트랙은 처음부터 일치시킬지, 아니면 동일하게 성공/실패만 남길지 결정 필요.
+- ~~**스킵 경로 로깅 수준**~~ → **2026-10-01 Developer 결정**: 스캔 단계의 대량 스킵(일봉 부족/유동성/박스권 아님/진입구간 아님)은 **DEBUG**, 최종 단계까지 올라온 후보가 게이트(악재·실적발표)로 막힌 건은 **INFO**, 보유 포지션 판정 결과(유지/매도)는 **INFO**, 주문 시도는 `range_trade_order_log`에 감사 기록. 수백 종목 × 매일을 INFO로 남기면 로그가 쓸모없어지므로 "전부 INFO"는 채택하지 않음 — 설계서와 코드를 이 수준으로 일치시킨다.
+- **서킷브레이커 자동 트립은 v1 미구현(2026-10-01 Developer)** — `range_trade_state.circuit_breaker_tripped` 컬럼과 "트립 시 신규매수 중단, 매도만 수행" 동작은 구현했지만, 평가손익을 계산해 **자동으로 트립시키는 로직은 넣지 않았다**(§7 함수 명세에 해당 함수가 없고, 임계값 설정도 §12에 확정값이 없어 임의 추가하지 않음). 현재는 운영자가 DB 플래그를 수동으로 세우는 경로만 존재. 손실 방어는 종목별 `RANGE_BREAKDOWN` 손절이 담당 — 자동 트립이 필요하면 Architect 단계에서 함수/임계값을 설계서에 먼저 추가할 것.
