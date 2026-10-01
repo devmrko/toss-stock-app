@@ -47,6 +47,7 @@ OrderResult sell(Long positionId, String reason)
 | `TossApiClient.placeOrder` 4xx/5xx | 재시도 안 함(중복 체결 위험) | `OrderResult(success=false, ...)` + 실패 로그, 다음 틱에서 재판단 |
 | 매도 대상 포지션 없음/이미 EXITED | 무시 아님 — 명시 실패 | `OrderResult(success=false, message="포지션 없음")` |
 | Discord 알림 전송 실패 | 주문 성공 자체는 되돌리지 않음(알림은 부가기능) | 로그만, `OrderResult`는 success 유지 |
+| `auto_trade_order_log` INSERT 실패(예: 컬럼 길이초과 등 DB 레벨 예외) | **2026-10-01 수정**: 감사로그 기록은 예외를 흡수(`saveLogSafely`) — 실주문이 이미 체결됐다면 포지션 기록(`positionMapper.insert`)은 반드시 계속 진행 | 감사로그 1건 유실(ERROR 로그로만 남음), 포지션/흐름은 정상 |
 
 ## 7. 엣지케이스
 - 서킷브레이커 트립 중 `sell` 호출: **허용**(README §9 — 손실 확정 경로는 막지 않음). `buy`는 호출측(`AutoTradeScheduler`)이 애초에 호출 안 함(이 함수 책임 아님, 호출 여부 판단은 상위 계층).
@@ -73,3 +74,4 @@ OrderResult sell(Long positionId, String reason)
 ## 11. 추적성
 - 인수조건: #808 "dryRun=true일 때 placeOrder 호출 0회", "서킷브레이커 트립 시 매도 허용".
 - 관련 ADR: 없음. **이 함수는 리뷰(06-Reviewer) 단계에서 특별히 꼼꼼히 볼 것** — 실제 자금 이동 지점.
+- **치명 버그 — 2026-10-01 발견·해소**: 012330(현대모비스) 실매수가 2026-10-01 09:00~09:05 사이 5회 체결됐는데 `auto_trade_order_log`/`auto_trade_position` 둘 다 기록 0건이었던 실사례. 원인: Toss가 반환하는 실제 `orderId`가 86자인데 `toss_order_id` 컬럼이 `VARCHAR2(50)`이라 `saveLog` INSERT가 `ORA-12899`로 실패 → 예외가 `buy()`를 그 자리에서 중단시켜 `positionMapper.insert()`(§7에서 "상위 책임"이라 언급한 "이미 보유 중" 체크의 전제조건)까지 도달하지 못함 → 포지션이 없으니 다음 틱에서도 "이미 보유 중"으로 안 걸려 같은 종목을 반복 매수 → 실잔고 소진. 사용자가 실제 매수가능금액(Toss `/api/v1/buying-power`)과 보유수량(`/api/v1/sellable-quantity`)을 직접 조회해 발견("니가 샀다고"). 컬럼을 `VARCHAR2(200)`으로 넓히고, `saveLog`→`saveLogSafely`로 감사로그 실패가 포지션 기록을 막지 못하게 방어(§6) — 두 수정 중 후자가 더 근본적(향후 어떤 이유로 로그 INSERT가 실패해도 이 사고가 재발하지 않음). 실계좌 012330 실보유분은 `auto_trade_position`에 수동 reconcile(평단 377,650원, 10주).
