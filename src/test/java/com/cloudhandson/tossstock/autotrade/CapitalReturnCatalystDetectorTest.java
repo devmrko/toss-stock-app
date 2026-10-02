@@ -81,6 +81,37 @@ class CapitalReturnCatalystDetectorTest {
     }
 
     @Test
+    void earnings_beat_with_strong_guidance_detected() {
+        // 2026-10-02 실사례: 마이크론(MU) PBR 11.65로 밸류에이션 절대치 탈락, 기존 촉매
+        // 키워드(자사주/투자 등)에도 안 걸림 — 이후 실제 +2.46% 상승. 실적서프라이즈 키워드 추가.
+        StockNewsMapper mapper = mock(StockNewsMapper.class);
+        when(mapper.active("MU", 20)).thenReturn(List.of(
+                news("Micron beats on earnings and issues strong guidance as global memory shortage continues",
+                        "", "EVENT", "MU:S5")));
+        CapitalReturnCatalystDetector d = new CapitalReturnCatalystDetector(mapper);
+        assertThat(d.hasRecentCatalyst("MU")).isTrue();
+    }
+
+    @Test
+    void korean_record_earnings_headline_detected() {
+        StockNewsMapper mapper = mock(StockNewsMapper.class);
+        when(mapper.active("MU", 20)).thenReturn(List.of(
+                news("마이크론, 월가 눈높이 넘었다…AI 메모리 타고 최대 실적", "", "EVENT", "MU:S5")));
+        CapitalReturnCatalystDetector d = new CapitalReturnCatalystDetector(mapper);
+        assertThat(d.hasRecentCatalyst("MU")).isTrue();
+    }
+
+    @Test
+    void bare_earnings_mention_without_surprise_qualifier_not_detected() {
+        // "실적" 단독(추측성 "실적 개선 기대" 등)은 너무 범용이라 제외 — 강한 확인형 표현만 채택.
+        StockNewsMapper mapper = mock(StockNewsMapper.class);
+        when(mapper.active("FFF", 20)).thenReturn(List.of(
+                news("FFF 3분기 실적 개선 기대…증권가 전망", "전망", "EVENT", "FFF:S5")));
+        CapitalReturnCatalystDetector d = new CapitalReturnCatalystDetector(mapper);
+        assertThat(d.hasRecentCatalyst("FFF")).isFalse();
+    }
+
+    @Test
     void no_keyword_match_returns_false() {
         StockNewsMapper mapper = mock(StockNewsMapper.class);
         when(mapper.active("CCC", 20)).thenReturn(List.of(

@@ -17,13 +17,21 @@ import java.util.Locale;
  * 삼성전기(009150)처럼 PER/PBR이 절대적으로 비싸도(117배/11배) 대규모 투자·수주 뉴스로
  * 재평가 여지를 인정받을 수 있게. 자본환원(배당·자사주)만 인정하던 원래 취지보다 넓어진 것이라,
  * "이미 비싼 종목을 성장 기대만으로 사는" 리스크가 커짐을 인지하고 채택(사용자 명시적 승인).
+ * 2026-10-02: 실적서프라이즈/가이던스상향 키워드 추가 — 미국 대형 기술주는 PBR이 구조적으로
+ * 높아(자사주매입으로 장부가 축소) 절대 PBR 상한(3.0)이 사실상 미국주식 전면 차단처럼 작동함을
+ * 실측 확인(마이크론 PBR 11.65 — "괴물 실적"급 S5 뉴스 5건에도 밸류에이션+기존 촉매 키워드
+ * 둘 다 탈락, 이후 실제로 +2.46% 상승해 기회비용 확인). 최근 5일 실제 S5 EVENT 헤드라인 80건을
+ * 실측해 "호실적/사상최대실적/깜짝실적/재평가" 같은 반복 패턴을 추려 키워드로 추가(감으로 안 찍음).
+ * "실적" 단독은 너무 범용(실적 개선 "기대" 같은 추측성 기사도 걸림)이라 제외, 강한 확인형 표현만 채택.
  */
 @Component
 public class CapitalReturnCatalystDetector {
 
     private static final List<String> KEYWORDS = List.of(
             "자사주", "소각", "배당", "buyback", "repurchase", "dividend",
-            "증설", "투자", "수주", "공급계약", "capex", "expansion", "investment", "contract");
+            "증설", "투자", "수주", "공급계약", "capex", "expansion", "investment", "contract",
+            "호실적", "최대 실적", "깜짝 실적", "어닝서프라이즈", "가이던스 상향", "재평가",
+            "beats on earnings", "beat on earnings", "strong guidance", "earnings surprise", "guidance raised");
     private static final int HOT_LEVEL_MIN = 4;
 
     private final StockNewsMapper newsMapper;
