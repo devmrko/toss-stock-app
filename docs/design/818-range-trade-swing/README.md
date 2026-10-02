@@ -104,7 +104,7 @@
 ### `range_trade_state` (싱글턴, #808 `auto_trade_state`와 분리 — 독립 예산/서킷브레이커)
 | 컬럼 | 설명 |
 |---|---|
-| total_budget, max_symbols, dry_run, circuit_breaker_tripped 등 | `auto_trade_state`와 동일 구조, 완전히 별도 행/테이블. **total_budget=1,000,000**(2026-10-01 확정, §11). **max_symbols=2, per_symbol_budget=500,000**(2026-10-01 Developer 확정, §12). 서킷브레이커 컬럼은 존재하지만 자동 트립 로직은 v1 미구현(§12). |
+| total_budget, max_symbols, dry_run, circuit_breaker_tripped 등 | `auto_trade_state`와 동일 구조, 완전히 별도 행/테이블. **total_budget=1,000,000**(2026-10-01 확정, §11). **max_symbols=2, per_symbol_budget=500,000**(2026-10-01 Developer 확정, §12). **circuit-breaker-pct=15.0**(2026-10-02 추가 — #808과 동일 기준 재사용, §12). |
 
 ### `range_trade_order_log` (#808 `auto_trade_order_log`와 동일 구조, 분리된 테이블)
 - 2026-10-01 #808 사고(toss_order_id 길이초과로 포지션 유실) 교훈 반영 — **처음부터 `toss_order_id VARCHAR2(200)`으로 생성**.
@@ -176,7 +176,7 @@
   | (유동성 필터 없이 폭+드리프트+진입구간만) | 279 |
 
   구현은 **2단계**로 간다: ① `DailyOhlcvMapper.rangeStatsBatch`(쿼리 1번)로 전 종목 윈도우 통계를 받아 Java에서 느슨한 1차 스크리닝(≈279종목) → ② 살아남은 종목만 실제 일봉을 청크(≤900종목/쿼리)로 받아 `LiquidityChecker`+`RangeBoundChecker.evaluate`로 **최종 판정**. 1차 스크리닝은 성능용이고 판정 권한이 없다 — 두 경로가 어긋나면 후보가 누락될 뿐(false negative) 잘못된 매수로는 이어지지 않는다.
-- **신규 후보의 "현재가" 소스 결정(2026-10-01 Developer)** — 보유 포지션(최대 2종목)은 `PriceCache`(실시간 시세)를 쓰지만, **신규 후보는 윈도우의 최신 종가**를 현재가로 쓴다. 이유: ① 장마감 후 1일 1회 배치라 최신 종가 = 현재가, ② 밴드와 가격을 같은 일봉 스냅샷에서 뽑아 내부 일관성 유지, ③ 후보 수백 종목에 시세 API를 때리면 **실거래 중인 #808 모멘텀 엔진과 같은 토스 API 레이트리밋(429 실사례 있음)을 건드릴 수 있음**.
+- **신규 후보의 "현재가" 소스 결정(2026-10-01 Developer, 2026-10-02 Architect 검토 완료)** — 보유 포지션(최대 2종목)은 `PriceCache`(실시간 시세)를 쓰지만, **신규 후보는 윈도우의 최신 종가**를 현재가로 쓴다. 이유: ① 장마감(15:30) 후 16:00 실행이라 최신 종가=30분 전 현재가, 스윙(일~주 보유) 전략엔 무시할 수 있는 오차, ② 밴드와 가격을 같은 일봉 스냅샷에서 뽑아 내부 일관성 유지, ③ 후보 수백 종목에 시세 API를 때리면 **실거래 중인 #808 모멘텀 엔진과 같은 토스 API 레이트리밋(429 실사례 있음)을 건드릴 수 있음**. QA 검토 결과 수정 불필요 — 그대로 채택.
 - **미국 시장 확장 여부** — v1은 KR만, US는 #808처럼 후속 이슈로 둘지 같이 설계할지.
 - ~~**스킵 경로 로깅 수준**~~ → **2026-10-01 Developer 결정**: 스캔 단계의 대량 스킵(일봉 부족/유동성/박스권 아님/진입구간 아님)은 **DEBUG**, 최종 단계까지 올라온 후보가 게이트(악재·실적발표)로 막힌 건은 **INFO**, 보유 포지션 판정 결과(유지/매도)는 **INFO**, 주문 시도는 `range_trade_order_log`에 감사 기록. 수백 종목 × 매일을 INFO로 남기면 로그가 쓸모없어지므로 "전부 INFO"는 채택하지 않음 — 설계서와 코드를 이 수준으로 일치시킨다.
-- **서킷브레이커 자동 트립은 v1 미구현(2026-10-01 Developer)** — `range_trade_state.circuit_breaker_tripped` 컬럼과 "트립 시 신규매수 중단, 매도만 수행" 동작은 구현했지만, 평가손익을 계산해 **자동으로 트립시키는 로직은 넣지 않았다**(§7 함수 명세에 해당 함수가 없고, 임계값 설정도 §12에 확정값이 없어 임의 추가하지 않음). 현재는 운영자가 DB 플래그를 수동으로 세우는 경로만 존재. 손실 방어는 종목별 `RANGE_BREAKDOWN` 손절이 담당 — 자동 트립이 필요하면 Architect 단계에서 함수/임계값을 설계서에 먼저 추가할 것.
+- ~~서킷브레이커 자동 트립은 v1 미구현~~ → **2026-10-02 해소**: #808 `CircuitBreaker.check`(순수함수, `currentEquity/initialBudget/thresholdPct`만 받음)를 그대로 재사용 — 전략 특화 로직이 전혀 없어 새로 만들 필요가 없었음. `RangeTradeScheduler`가 매 틱 `range_trade_position` 전체(보유+청산)로 평가손익을 계산해 `circuit-breaker-pct=15.0`(#808과 동일 기준) 도달 시 자동 트립 + Discord 알림. 테스트(`fresh_equity_breach_trips_circuit_breaker_and_skips_scan`/`healthy_equity_does_not_trip`)로 고정.

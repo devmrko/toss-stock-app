@@ -1,5 +1,6 @@
 package com.cloudhandson.tossstock.rangetrade;
 
+import com.cloudhandson.tossstock.briefing.DiscordClient;
 import com.cloudhandson.tossstock.market.DailyOhlcvMapper;
 import com.cloudhandson.tossstock.toss.PriceCache;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
@@ -32,6 +33,7 @@ class RangeTradeSchedulerTest {
     private BadNewsGate badNewsGate;
     private EarningsCalendarGate earningsGate;
     private RangeOrderExecutor orderExecutor;
+    private DiscordClient discord;
     private RangeTradeScheduler scheduler;
 
     @BeforeEach
@@ -43,15 +45,18 @@ class RangeTradeSchedulerTest {
         badNewsGate = mock(BadNewsGate.class);
         earningsGate = mock(EarningsCalendarGate.class);
         orderExecutor = mock(RangeOrderExecutor.class);
+        discord = mock(DiscordClient.class);
         scheduler = new RangeTradeScheduler(props(true), stateMapper, positionMapper, dailyMapper,
-                priceCache, badNewsGate, earningsGate, orderExecutor);
+                priceCache, badNewsGate, earningsGate, orderExecutor, discord);
         when(dailyMapper.rangeStatsBatch(any(LocalDate.class), anyInt())).thenReturn(List.of());
+        when(positionMapper.findAll()).thenReturn(List.of()); // 서킷브레이커 평가손익 계산용 기본값
     }
 
     private RangeTradeState state(boolean tripped) {
         RangeTradeState s = new RangeTradeState();
         s.setDryRun(true);
         s.setCircuitBreakerTripped(tripped);
+        s.setTotalBudget(BigDecimal.valueOf(1_000_000)); // props() 기본 예산과 동일
         return s;
     }
 
@@ -132,6 +137,43 @@ class RangeTradeSchedulerTest {
 
         verify(orderExecutor).sell(any(), eq(RangeExitReason.RANGE_BREAKDOWN), any()); // 매도는 수행
         verify(dailyMapper, never()).rangeStatsBatch(any(LocalDate.class), anyInt()); // 신규 스캔은 안 함
+    }
+
+    @Test
+    void fresh_equity_breach_trips_circuit_breaker_and_skips_scan() {
+        // 2026-10-02 추가 — 설계서 v1엔 자동 트립 로직이 없었음(QA 지적). 총예산 100만원인데
+        // 청산 포지션 손실만으로 -30%(기준 -15% 초과) → 이번 틱에서 트립되고 신규 스캔은 생략.
+        when(stateMapper.find()).thenReturn(state(false));
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        RangeTradePosition exited = new RangeTradePosition();
+        exited.setStatus("EXITED");
+        exited.setEntryPrice(BigDecimal.valueOf(100_000));
+        exited.setEntryQty(BigDecimal.valueOf(10));
+        exited.setExitPrice(BigDecimal.valueOf(70_000)); // (70,000-100,000)*10 = -300,000 = 예산의 -30%
+        when(positionMapper.findAll()).thenReturn(List.of(exited));
+
+        scheduler.tick();
+
+        verify(stateMapper).tripCircuitBreaker(any());
+        verify(dailyMapper, never()).rangeStatsBatch(any(LocalDate.class), anyInt());
+    }
+
+    @Test
+    void healthy_equity_does_not_trip() {
+        when(stateMapper.find()).thenReturn(state(false));
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        RangeTradePosition exited = new RangeTradePosition();
+        exited.setStatus("EXITED");
+        exited.setEntryPrice(BigDecimal.valueOf(100_000));
+        exited.setEntryQty(BigDecimal.valueOf(10));
+        exited.setExitPrice(BigDecimal.valueOf(103_000)); // +30,000 = 예산의 +3%, 트립 기준 한참 못 미침
+        when(positionMapper.findAll()).thenReturn(List.of(exited));
+
+        scheduler.tick();
+
+        verify(stateMapper, never()).tripCircuitBreaker(any());
+        verify(dailyMapper).rangeStatsBatch(any(LocalDate.class), anyInt()); // 스캔까지 정상 진행
     }
 
     @Test

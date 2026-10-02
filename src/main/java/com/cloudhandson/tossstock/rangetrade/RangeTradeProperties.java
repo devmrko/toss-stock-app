@@ -15,6 +15,7 @@ public record RangeTradeProperties(
         BigDecimal totalBudget,
         int maxSymbols,
         BigDecimal perSymbolBudget,
+        double circuitBreakerPct,
         int windowDays,
         double minWidthPct,
         double maxWidthPct,

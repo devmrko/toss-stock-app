@@ -16,7 +16,7 @@ final class RangeTradeTestFixtures {
     /** 운영 기본값(application.yml range-trade)과 동일. dryRun 만 달리 줄 수 있음. */
     static RangeTradeProperties props(boolean dryRun) {
         return new RangeTradeProperties(dryRun, BigDecimal.valueOf(1_000_000), 2, BigDecimal.valueOf(500_000),
-                60, 26.0, 50.0, 15.0, 10.0, 10.0, 5.0, BigDecimal.valueOf(300_000_000), 30, "",
+                15.0, 60, 26.0, 50.0, 15.0, 10.0, 10.0, 5.0, BigDecimal.valueOf(300_000_000), 30, "",
                 "0 0 16 * * MON-FRI");
     }
 

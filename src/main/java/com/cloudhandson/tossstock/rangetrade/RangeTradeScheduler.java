@@ -1,6 +1,8 @@
 package com.cloudhandson.tossstock.rangetrade;
 
+import com.cloudhandson.tossstock.autotrade.CircuitBreaker;
 import com.cloudhandson.tossstock.autotrade.LiquidityChecker;
+import com.cloudhandson.tossstock.briefing.DiscordClient;
 import com.cloudhandson.tossstock.market.DailyOhlcv;
 import com.cloudhandson.tossstock.market.DailyOhlcvMapper;
 import com.cloudhandson.tossstock.market.DailyRangeStats;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -43,11 +46,13 @@ public class RangeTradeScheduler {
     private final BadNewsGate badNewsGate;
     private final EarningsCalendarGate earningsGate;
     private final RangeOrderExecutor orderExecutor;
+    private final DiscordClient discord;
 
     public RangeTradeScheduler(RangeTradeProperties props, RangeTradeStateMapper stateMapper,
                                RangeTradePositionMapper positionMapper, DailyOhlcvMapper dailyMapper,
                                PriceCache priceCache, BadNewsGate badNewsGate,
-                               EarningsCalendarGate earningsGate, RangeOrderExecutor orderExecutor) {
+                               EarningsCalendarGate earningsGate, RangeOrderExecutor orderExecutor,
+                               DiscordClient discord) {
         this.props = props;
         this.stateMapper = stateMapper;
         this.positionMapper = positionMapper;
@@ -56,6 +61,7 @@ public class RangeTradeScheduler {
         this.badNewsGate = badNewsGate;
         this.earningsGate = earningsGate;
         this.orderExecutor = orderExecutor;
+        this.discord = discord;
     }
 
     @Scheduled(cron = "${range-trade.cron:0 0 16 * * MON-FRI}", zone = "Asia/Seoul")
@@ -75,7 +81,8 @@ public class RangeTradeScheduler {
             }
         }
 
-        if (state.isCircuitBreakerTripped()) {
+        boolean tripped = checkCircuitBreaker(state);
+        if (tripped || state.isCircuitBreakerTripped()) {
             log.warn("[레인지] 서킷브레이커 트립 상태 — 신규 매수 스킵(매도는 위에서 처리됨)");
             return;
         }
@@ -107,6 +114,41 @@ public class RangeTradeScheduler {
             case RANGE_BREAKDOWN -> orderExecutor.sell(p, RangeExitReason.RANGE_BREAKDOWN, current);
             default -> log.info("[레인지] 보유 유지: symbol={}, 현재가={}, 밴드={}~{}", p.getSymbol(), current,
                     p.getRangeLowAtEntry(), p.getRangeHighAtEntry());
+        }
+    }
+
+    /**
+     * 전체 평가손익(원금 대비) 계산 후 임계치 도달 시 트립 처리 — #808 {@code AutoTradeScheduler}와
+     * 동일한 패턴(2026-10-02 추가, 설계서가 함수/임계값을 정의 안 해 v1에선 미구현이었던 항목).
+     */
+    private boolean checkCircuitBreaker(RangeTradeState state) {
+        if (state.isCircuitBreakerTripped()) {
+            return true;
+        }
+        BigDecimal equity = state.getTotalBudget();
+        for (RangeTradePosition p : positionMapper.findAll()) {
+            BigDecimal qty = p.getEntryQty();
+            if ("EXITED".equals(p.getStatus())) {
+                equity = equity.add(p.getExitPrice().subtract(p.getEntryPrice()).multiply(qty));
+            } else {
+                BigDecimal current = livePrice(p.getSymbol());
+                if (current != null) {
+                    equity = equity.add(current.subtract(p.getEntryPrice()).multiply(qty));
+                }
+            }
+        }
+        boolean trip = CircuitBreaker.check(equity, state.getTotalBudget(), props.circuitBreakerPct());
+        if (trip) {
+            stateMapper.tripCircuitBreaker(LocalDateTime.now());
+            notify("🚨 [레인지] 서킷브레이커 발동 — 전체 평가손익이 -" + props.circuitBreakerPct()
+                    + "% 도달, 신규 매수를 중단합니다. 재개는 수동 설정 변경 필요.");
+        }
+        return trip;
+    }
+
+    private void notify(String content) {
+        if (props.alertsEnabled()) {
+            discord.send(props.webhookUrl(), content);
         }
     }
 
