@@ -1,6 +1,6 @@
 # 설계서: 뉴스-독립 후보 유지 — 밸류에이션+상대강도 기반 (#828)
 
-> **상태**: Draft
+> **상태**: Approved
 > **작성**: [AI] Architect · **최종수정**: 2026-10-05
 > **추적성** — Redmine: #828 · 관련: #808(모멘텀 엔진), 메모리 `exit-signal-macro-micro-theme-rotation-ideas.md`(2026-10-02) · 관련 ADR: 없음
 > · 구현 파일(예정): `CandidateDiscoveryService.java`, `AutoTradeScheduler.java`(기존 파일 수정, 신규 클래스 없음)
@@ -23,7 +23,7 @@
 ## 3. 인수조건 (Acceptance Criteria)
 - [ ] 뉴스가 소멸했지만 저평가(PER/PBR 기준 통과) + 상대강세(지수 대비 초과수익)인 후보는 `removeFadedCandidates`에서 해제되지 않는다.
 - [ ] 뉴스가 소멸하고 저평가 또는 상대강세 중 하나라도 실패하면 기존대로 즉시 해제된다(회귀 없음).
-- [ ] 후보가 등록된 지 `candidate-max-retention-days`(예: 30일)를 넘으면, 밸류에이션이 아무리 좋아도 해제된다(무기한 좀비 후보 방지).
+- [ ] 후보가 등록된 지 `candidate-max-retention-days`(**30일, 2026-10-05 확정**)를 넘으면, 밸류에이션이 아무리 좋아도 해제된다(무기한 좀비 후보 방지).
 - [ ] `AutoTradeScheduler.scanCandidates`도 동일한 "저평가+상대강세"면 호재 소멸을 무시하고 매수 스캔을 계속한다 — 후보풀 유지가 실제 매수 기회로 이어진다.
 
 ## 4. 컨텍스트 & 제약
@@ -88,5 +88,5 @@
 - **AND vs OR(저평가/상대강세)**: AND를 선택 — "싸지만 추세는 하락중"이거나 "오르지만 이미 비쌈" 둘 다 보수적으로 걸러내는 쪽. OR로 하면 #808의 다른 게이트들과 중복 완화가 누적돼 판별력이 떨어질 위험.
 
 ## 12. 미해결 질문 (Open Questions)
-- `candidate-max-retention-days` 확정값 없음 — 30일을 초기 제안(검증 전까지 비확정).
+- ~~`candidate-max-retention-days` 확정값~~ → **2026-10-05 확정: 30일**(사용자 결정).
 - 이 로직이 §2에서 제외한 "교차 섹터 비교"(테마로테이션)로 자연스럽게 이어질 수 있는데, 그건 별도 이슈로 남겨둠 — 메모리 파일 참고.
