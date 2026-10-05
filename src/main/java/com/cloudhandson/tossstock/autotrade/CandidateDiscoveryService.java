@@ -139,14 +139,19 @@ public class CandidateDiscoveryService {
                 && createdAt.isAfter(LocalDateTime.now().minusDays(props.candidateMaxRetentionDays()));
     }
 
-    /** 지수(KR 069500 / US SPY) 대비 동일 윈도우 수익률 초과 여부. 데이터 부족이면 false. */
+    /**
+     * 지수(KR 069500 / US SPY) 대비 동일 윈도우 수익률 초과 여부. 데이터 부족이면 false.
+     * 2026-10-05(#828 QA): Toss 캔들 API가 US ETF를 지원 안 해 069500처럼 {@code dailyMapper}로
+     * SPY를 조회하면 항상 데이터 없음 — US만 {@link ValuationClient#getIndexReturnPct}(야후
+     * 차트 API)로 대체. KR(069500)은 기존 경로(DB) 그대로, 실측상 정상 작동.
+     */
     private boolean isRelativelyStrong(AutoTradeCandidate c) {
-        String indexSymbol = "US".equalsIgnoreCase(c.getMarket()) ? "SPY" : "069500";
         LocalDate from = LocalDate.now().minusDays(props.relativeStrengthWindowDays() + 10L);
         List<DailyOhlcv> stockWindow = dailyMapper.recentForSymbols(List.of(c.getSymbol()), from);
-        List<DailyOhlcv> indexWindow = dailyMapper.recentForSymbols(List.of(indexSymbol), from);
         Double stockReturn = RelativeStrengthChecker.pctReturn(stockWindow);
-        Double indexReturn = RelativeStrengthChecker.pctReturn(indexWindow);
+        Double indexReturn = "US".equalsIgnoreCase(c.getMarket())
+                ? valuationClient.getIndexReturnPct("SPY", props.relativeStrengthWindowDays())
+                : RelativeStrengthChecker.pctReturn(dailyMapper.recentForSymbols(List.of("069500"), from));
         return stockReturn != null && indexReturn != null
                 && RelativeStrengthChecker.isRelativelyStrong(stockReturn, indexReturn);
     }

@@ -245,6 +245,50 @@ public class ValuationClient {
         return new Valuation(per, pbr);
     }
 
+    /**
+     * 단일 심볼(주로 지수 ETF)의 최근 N거래일 수익률(%) — 야후 차트 API(v8/finance/chart).
+     * #828(2026-10-05): Toss 캔들 API가 US ETF를 전혀 지원 안 함(실측: SPY/QQQ/VOO/IVV/DIA
+     * 전부 0건) — 상대강세 지수(SPY) 계산을 이걸로 대체. 이 엔드포인트는 크럼이 필요 없음(실측
+     * 확인, getValuation/getAnnualFinancials의 quoteSummary와 다른 엔드포인트). 실패 시 null.
+     */
+    public Double getIndexReturnPct(String symbol, int windowDays) {
+        try {
+            HttpRequest req = HttpRequest.newBuilder(
+                    URI.create("https://query1.finance.yahoo.com/v8/finance/chart/" + symbol + "?range=6mo&interval=1d"))
+                    .header("User-Agent", "Mozilla/5.0")
+                    .timeout(TIMEOUT)
+                    .GET().build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() >= 400) {
+                return null;
+            }
+            JsonNode results = om.readTree(res.body()).path("chart").path("result");
+            if (!results.isArray() || results.isEmpty()) {
+                return null;
+            }
+            JsonNode closeNode = results.get(0).path("indicators").path("quote").path(0).path("close");
+            List<Double> closes = new ArrayList<>();
+            for (JsonNode c : closeNode) {
+                if (!c.isNull()) {
+                    closes.add(c.asDouble());
+                }
+            }
+            int n = Math.min(closes.size(), windowDays + 1);
+            if (n < 2) {
+                return null;
+            }
+            double first = closes.get(closes.size() - n);
+            double last = closes.get(closes.size() - 1);
+            if (first == 0) {
+                return null;
+            }
+            return (last - first) / first * 100;
+        } catch (Exception e) {
+            log.warn("지수 수익률 조회 실패(symbol={}): {}", symbol, e.toString());
+            return null;
+        }
+    }
+
     private static BigDecimal readRaw(JsonNode node) {
         if (node == null || !node.has("raw")) {
             return null;

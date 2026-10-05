@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -193,15 +194,20 @@ class CandidateDiscoveryServiceTest {
         return List.of(day(LocalDate.of(2026, 9, 14), firstClose), day(LocalDate.of(2026, 10, 1), lastClose));
     }
 
-    private void givenPriceWindows(String symbol, List<DailyOhlcv> stock, List<DailyOhlcv> index) {
+    /**
+     * 2026-10-05 QA: Toss 캔들 API가 US ETF(SPY)를 지원 안 해(실측: SPY/QQQ/VOO/IVV/DIA 전부
+     * 0건) 지수 수익률을 {@code ValuationClient#getIndexReturnPct}(야후 차트 API)로 대체—
+     * US는 이걸로 스텁, KR(069500)은 여전히 {@code dailyMapper} 경로.
+     */
+    private void givenPriceWindows(String symbol, List<DailyOhlcv> stock, Double spyReturnPct) {
         when(dailyMapper.recentForSymbols(eq(List.of(symbol)), any())).thenReturn(stock);
-        when(dailyMapper.recentForSymbols(eq(List.of("SPY")), any())).thenReturn(index);
+        when(valuationClient.getIndexReturnPct(eq("SPY"), anyInt())).thenReturn(spyReturnPct);
     }
 
     @Test
     void faded_but_cheap_and_relatively_strong_candidate_is_retained() {
         fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", window(36.74, 41.15), window(600.00, 612.00)); // +12.0% vs +2.0%
+        givenPriceWindows("SMCI", window(36.74, 41.15), 2.0); // +12.0% vs SPY +2.0%
         when(valuationClient.getValuation("SMCI", "US")).thenReturn(new Valuation(SMCI_PER, SMCI_PBR));
 
         service.refresh();
@@ -212,7 +218,7 @@ class CandidateDiscoveryServiceTest {
     @Test
     void faded_and_cheap_but_not_relatively_strong_is_deactivated() {
         fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", window(41.15, 36.74), window(600.00, 612.00)); // -10.7% vs +2.0%
+        givenPriceWindows("SMCI", window(41.15, 36.74), 2.0); // -10.7% vs SPY +2.0%
         when(valuationClient.getValuation("SMCI", "US")).thenReturn(new Valuation(SMCI_PER, SMCI_PBR));
 
         service.refresh();
@@ -223,7 +229,7 @@ class CandidateDiscoveryServiceTest {
     @Test
     void faded_and_relatively_strong_but_expensive_is_deactivated() {
         fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", window(36.74, 41.15), window(600.00, 612.00));
+        givenPriceWindows("SMCI", window(36.74, 41.15), 2.0);
         when(valuationClient.getValuation("SMCI", "US"))
                 .thenReturn(new Valuation(BigDecimal.valueOf(45.0), BigDecimal.valueOf(8.0))); // max-per/pbr 초과
 
@@ -235,7 +241,7 @@ class CandidateDiscoveryServiceTest {
     @Test
     void faded_candidate_beyond_max_retention_days_is_deactivated_even_if_cheap_and_strong() {
         fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(40)); // 상한 30일 초과
-        givenPriceWindows("SMCI", window(36.74, 41.15), window(600.00, 612.00));
+        givenPriceWindows("SMCI", window(36.74, 41.15), 2.0);
         when(valuationClient.getValuation("SMCI", "US")).thenReturn(new Valuation(SMCI_PER, SMCI_PBR));
 
         service.refresh();
@@ -247,7 +253,7 @@ class CandidateDiscoveryServiceTest {
     void valuation_lookup_failure_deactivates_faded_candidate() {
         // fail-closed(설계 §9) — 외부 API 실패로 판정 불가면 유지하지 않는다.
         fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", window(36.74, 41.15), window(600.00, 612.00));
+        givenPriceWindows("SMCI", window(36.74, 41.15), 2.0);
         when(valuationClient.getValuation("SMCI", "US")).thenReturn(null);
 
         service.refresh();
@@ -259,7 +265,20 @@ class CandidateDiscoveryServiceTest {
     void missing_price_history_deactivates_faded_candidate() {
         // 일봉이 부족해 상대강도 판정 자체가 불가 → fail-closed(설계 §9).
         fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", List.of(), window(600.00, 612.00));
+        givenPriceWindows("SMCI", List.of(), 2.0);
+        when(valuationClient.getValuation("SMCI", "US")).thenReturn(new Valuation(SMCI_PER, SMCI_PBR));
+
+        service.refresh();
+
+        verify(candidateMapper).deactivate("SMCI");
+    }
+
+    @Test
+    void index_return_fetch_failure_deactivates_faded_candidate() {
+        // 2026-10-05 신규: 야후 차트 API 실패(null) → fail-closed(설계 §9), 기존 SPY 데이터
+        // 부재 문제의 대체 경로 자체가 또 실패하는 경우도 안전하게 처리되는지 확인.
+        fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
+        givenPriceWindows("SMCI", window(36.74, 41.15), null);
         when(valuationClient.getValuation("SMCI", "US")).thenReturn(new Valuation(SMCI_PER, SMCI_PBR));
 
         service.refresh();

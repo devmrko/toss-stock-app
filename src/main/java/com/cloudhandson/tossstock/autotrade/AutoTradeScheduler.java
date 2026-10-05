@@ -208,13 +208,16 @@ public class AutoTradeScheduler {
                 ? props.minAvgTradingValueUsd() : props.minAvgTradingValue();
         boolean liquidity = LiquidityChecker.isLiquid(recentDays, liquidityThreshold);
 
-        String indexSymbol = "US".equalsIgnoreCase(c.getMarket()) ? "SPY" : "069500";
+        // 2026-10-05(#828 QA 발견): Toss 캔들 API가 US ETF(SPY)를 지원 안 해 US 상대강세가
+        // 항상 데이터없음(false)으로 고정돼 있었음(실측: SPY/QQQ/VOO/IVV/DIA 전부 0건) — US만
+        // 야후 차트 API(ValuationClient#getIndexReturnPct)로 대체, KR(069500)은 기존 경로 유지.
         List<DailyOhlcv> stockWindow = dailyMapper.recentForSymbols(List.of(c.getSymbol()),
                 LocalDate.now().minusDays(props.relativeStrengthWindowDays() + 10));
-        List<DailyOhlcv> indexWindow = dailyMapper.recentForSymbols(List.of(indexSymbol),
-                LocalDate.now().minusDays(props.relativeStrengthWindowDays() + 10));
         Double stockReturn = RelativeStrengthChecker.pctReturn(stockWindow);
-        Double indexReturn = RelativeStrengthChecker.pctReturn(indexWindow);
+        Double indexReturn = "US".equalsIgnoreCase(c.getMarket())
+                ? valuationClient.getIndexReturnPct("SPY", props.relativeStrengthWindowDays())
+                : RelativeStrengthChecker.pctReturn(dailyMapper.recentForSymbols(List.of("069500"),
+                        LocalDate.now().minusDays(props.relativeStrengthWindowDays() + 10)));
         boolean relativeStrength = stockReturn != null && indexReturn != null
                 && RelativeStrengthChecker.isRelativelyStrong(stockReturn, indexReturn);
 
