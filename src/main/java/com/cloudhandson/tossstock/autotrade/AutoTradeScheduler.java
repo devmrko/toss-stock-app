@@ -38,6 +38,7 @@ public class AutoTradeScheduler {
     private final ValuationClient valuationClient;
     private final CapitalReturnCatalystDetector capitalReturnCatalystDetector;
     private final UniverseMapper universeMapper;
+    private final CandidateDiscoveryService candidateDiscovery;
     private final OrderExecutor orderExecutor;
     private final DiscordClient discord;
 
@@ -46,7 +47,7 @@ public class AutoTradeScheduler {
                                DailyOhlcvMapper dailyMapper, StockNewsMapper newsMapper, PriceCache priceCache,
                                NewsFadeDetector newsFadeDetector, ValuationClient valuationClient,
                                CapitalReturnCatalystDetector capitalReturnCatalystDetector,
-                               UniverseMapper universeMapper,
+                               UniverseMapper universeMapper, CandidateDiscoveryService candidateDiscovery,
                                OrderExecutor orderExecutor, DiscordClient discord) {
         this.props = props;
         this.stateMapper = stateMapper;
@@ -59,6 +60,7 @@ public class AutoTradeScheduler {
         this.valuationClient = valuationClient;
         this.capitalReturnCatalystDetector = capitalReturnCatalystDetector;
         this.universeMapper = universeMapper;
+        this.candidateDiscovery = candidateDiscovery;
         this.orderExecutor = orderExecutor;
         this.discord = discord;
     }
@@ -167,8 +169,8 @@ public class AutoTradeScheduler {
             if (!MarketHours.isOpen(c.getMarket(), LocalDateTime.now())) {
                 continue; // 그 시장이 지금 닫혀있음(KST 기준, 한국/미국 각각 판단)
             }
-            if (newsFadeDetector.hasNewsFaded(c.getSymbol())) {
-                continue; // 호재(S4↑) 없음
+            if (newsFadeDetector.hasNewsFaded(c.getSymbol()) && !candidateDiscovery.retainDespiteNewsFade(c)) {
+                continue; // 호재(S4↑) 없고, 저평가+상대강세 예외(#828)도 아님
             }
             List<DailyOhlcv> recent = dailyMapper.recentForSymbols(List.of(c.getSymbol()),
                     LocalDate.now().minusDays(props.volumeSpikeWindowDays() + 10));

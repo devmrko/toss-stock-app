@@ -23,7 +23,7 @@
 ## 3. 인수조건 (Acceptance Criteria)
 - [ ] 뉴스가 소멸했지만 저평가(PER/PBR 기준 통과) + 상대강세(지수 대비 초과수익)인 후보는 `removeFadedCandidates`에서 해제되지 않는다.
 - [ ] 뉴스가 소멸하고 저평가 또는 상대강세 중 하나라도 실패하면 기존대로 즉시 해제된다(회귀 없음).
-- [ ] 후보가 등록된 지 `candidate-max-retention-days`(**30일, 2026-10-05 확정**)를 넘으면, 밸류에이션이 아무리 좋아도 해제된다(무기한 좀비 후보 방지).
+- [ ] 후보가 등록된 지 `candidate-max-retention-days`(**30일, 2026-10-05 확정**)를 넘으면, 밸류에이션이 아무리 좋아도 해제된다(무기한 좀비 후보 방지). — *구현 명확화(2026-10-05 Developer): 이 상한은 §5·§8 흐름대로 **호재가 소멸한 경우에만** 적용된다. 호재(S4↑)가 아직 살아있는 후보는 등록 30일이 지났어도 기존과 동일하게 유지 — 이번 변경으로 기존 해제 규칙이 더 엄격해지는 회귀를 만들지 않기 위함.*
 - [ ] `AutoTradeScheduler.scanCandidates`도 동일한 "저평가+상대강세"면 호재 소멸을 무시하고 매수 스캔을 계속한다 — 후보풀 유지가 실제 매수 기회로 이어진다.
 
 ## 4. 컨텍스트 & 제약
@@ -58,8 +58,14 @@
 |------|-----------|----------------|------|------|-----------|-------|
 | `CandidateDiscoveryService.removeFadedCandidates` | 호재 소멸 후보 중 밸류+추세 예외 대상 제외하고 해제(기존 함수 수정) | `void removeFadedCandidates()` | - | - | 밸류에이션 조회 실패 시 안전 쪽(해제, 기존 fail-closed 유지) | 단순(기존 분기에 조건 추가) |
 | `AutoTradeScheduler.scanCandidates` | 호재 소멸이어도 밸류+추세 예외면 매수 스캔 계속(기존 함수 수정) | `void scanCandidates(int openSlots)` | - | - | 동일 | 단순 |
+| `CandidateDiscoveryService.retainDespiteNewsFade` | 호재 소멸 후보의 유지 여부 판정(보유기간 내 AND 저평가 AND 상대강세) — 위 두 경로가 공유 | `boolean retainDespiteNewsFade(AutoTradeCandidate c)` (package-private) | 후보 1건 | 유지 여부 | 데이터/조회 불가 시 `false`(fail-closed) | 단순(불린 AND 3개) |
 
 > 신규 순수함수 없음 — `ValuationChecker.isUndervalued`/`RelativeStrengthChecker.isRelativelyStrong`를 그대로 재사용.
+> **2026-10-05 Developer 추가(설계 보정)**: 같은 판정을 두 경로(`removeFadedCandidates` 15분 주기 /
+> `scanCandidates` 1분 주기)가 써야 해서, 밸류에이션·일봉 조회를 양쪽에 복제하지 않도록 판정을
+> `retainDespiteNewsFade` 한 곳에 두고 `AutoTradeScheduler`가 `CandidateDiscoveryService`를 주입받아
+> 호출한다(신규 클래스 없음, 후보 풀 수명주기의 소유자가 판정을 소유). AND 조건이므로 평가 순서는
+> 결과와 무관 — 비용이 싼 순서(보유기간 → 일봉 DB → 밸류에이션 외부 API)로 둬서 레이트리밋 노출을 줄인다.
 
 ## 8. 흐름 / 알고리즘
 1. `removeFadedCandidates`: 각 활성 후보에 대해 `hasNewsFaded`가 true일 때만 아래 추가 판정(기존엔 true면 바로 해제):

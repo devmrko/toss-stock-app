@@ -31,6 +31,7 @@ public record AutoTradeProperties(
         BigDecimal minAvgTradingValueUsd,
         int relativeStrengthWindowDays,
         int minFundamentalPass,
+        int candidateMaxRetentionDays,
         @NestedConfigurationProperty Gate gate) {
 
     public boolean alertsEnabled() {

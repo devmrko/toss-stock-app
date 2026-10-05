@@ -109,6 +109,10 @@ auto-trade:
   min-avg-trading-value-usd: ${AUTO_TRADE_MIN_AVG_TRADING_VALUE_USD:200000}
   relative-strength-window-days: ${AUTO_TRADE_RS_WINDOW_DAYS:20}
   min-fundamental-pass: ${AUTO_TRADE_MIN_FUNDAMENTAL_PASS:2}
+  # 후보 최대 보유기간(#828, 2026-10-05 사용자 확정 30일) — 호재가 소멸해도 저평가+상대강세면
+  # 후보를 계속 유지하는데, 그 유지가 무기한이 되면 "좀비 후보"가 쌓이므로 등록(created_at)
+  # 기준 상한을 둔다. 상한을 넘으면 밸류에이션이 아무리 좋아도 해제.
+  candidate-max-retention-days: ${AUTO_TRADE_CANDIDATE_MAX_RETENTION_DAYS:30}
   gate:
     # 2026-09-30: 35→20으로 완화. 실측(최근 25거래일 breadth 분포: 16.3~69.9%, 중앙값≈45%) —
     # 35 기준은 5/25일(20%, 오늘 30.8% 포함하는 통상적 약세일까지)을 통째로 막았음. 사용자가
