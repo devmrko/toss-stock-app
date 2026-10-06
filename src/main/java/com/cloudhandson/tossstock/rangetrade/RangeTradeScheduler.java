@@ -104,17 +104,29 @@ public class RangeTradeScheduler {
         }
         if (badNewsGate.hasStrongBadNews(p.getSymbol())) {
             log.info("[레인지] 악재(S1/S2) 발생 — 즉시 매도: symbol={}", p.getSymbol());
-            orderExecutor.sell(p, RangeExitReason.BAD_NEWS, current);
+            orderExecutor.sell(p, RangeExitReason.BAD_NEWS, current,
+                    sellRationale(p, RangeExitReason.BAD_NEWS, current));
             return;
         }
         RangeTradeSignal.Signal signal = RangeTradeSignal.decide(current, p.getRangeLowAtEntry(),
                 p.getRangeHighAtEntry(), true, props);
         switch (signal) {
-            case PROFIT_TAKE -> orderExecutor.sell(p, RangeExitReason.PROFIT_TAKE, current);
-            case RANGE_BREAKDOWN -> orderExecutor.sell(p, RangeExitReason.RANGE_BREAKDOWN, current);
+            case PROFIT_TAKE -> orderExecutor.sell(p, RangeExitReason.PROFIT_TAKE, current,
+                    sellRationale(p, RangeExitReason.PROFIT_TAKE, current));
+            case RANGE_BREAKDOWN -> orderExecutor.sell(p, RangeExitReason.RANGE_BREAKDOWN, current,
+                    sellRationale(p, RangeExitReason.RANGE_BREAKDOWN, current));
             default -> log.info("[레인지] 보유 유지: symbol={}, 현재가={}, 밴드={}~{}", p.getSymbol(), current,
                     p.getRangeLowAtEntry(), p.getRangeHighAtEntry());
         }
+    }
+
+    /**
+     * 매도 결정근거 스냅샷(#832) — 임계선은 판정에 쓴 {@link RangeTradeSignal}의 공개 순수 함수로 재계산.
+     */
+    private String sellRationale(RangeTradePosition p, RangeExitReason reason, BigDecimal current) {
+        return RangeSellRationale.describe(reason, p.getEntryPrice(), p.getRangeLowAtEntry(),
+                p.getRangeHighAtEntry(), RangeTradeSignal.profitFloor(p.getRangeHighAtEntry(), props),
+                RangeTradeSignal.breakdownFloor(p.getRangeLowAtEntry(), props), current);
     }
 
     /**
@@ -237,7 +249,9 @@ public class RangeTradeScheduler {
         if (earningsGate.hasUpcomingEarnings(symbol, props.holdingHorizonDays())) {
             return false; // 사유는 게이트 내부에서 로그
         }
-        return orderExecutor.buy(symbol, props.perSymbolBudget(), price, band.low(), band.high());
+        String rationale = RangeBuyRationale.describe(band.low(), band.high(),
+                RangeTradeSignal.entryCeiling(band.low(), props), price);
+        return orderExecutor.buy(symbol, props.perSymbolBudget(), price, band.low(), band.high(), rationale);
     }
 
     /** 종목별 일봉을 청크로 일괄 조회(N+1 방지). */

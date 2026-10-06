@@ -24,8 +24,8 @@ public final class TrailingStopCalculator {
             throw new IllegalArgumentException("peak must be >= avgCost: peak=" + peak + ", avgCost=" + avgCost);
         }
 
-        BigDecimal hardFloor = avgCost.multiply(BigDecimal.valueOf(1 - hardStopPct / 100.0), MathContext.DECIMAL64);
-        BigDecimal trailFloor = peak.multiply(BigDecimal.valueOf(1 - trailPct / 100.0), MathContext.DECIMAL64);
+        BigDecimal hardFloor = hardFloor(avgCost, hardStopPct);
+        BigDecimal trailFloor = trailFloor(peak, trailPct);
         BigDecimal stopPrice = hardFloor.max(trailFloor);
 
         if (current.compareTo(stopPrice) > 0) {
@@ -33,5 +33,18 @@ public final class TrailingStopCalculator {
         }
         boolean hitViaHard = current.compareTo(hardFloor) <= 0 && hardFloor.compareTo(trailFloor) >= 0;
         return hitViaHard ? ExitReason.HARD_STOP : ExitReason.TRAIL_STOP;
+    }
+
+    /**
+     * 하드손절선 — 평단 - hardStopPct%. {@link #decide}가 쓰는 바로 그 값이며, 결정근거 로깅(#832)에서
+     * "어느 쪽이 바인딩이었나"를 남기려고 공개했다(판정 로직은 바뀌지 않음).
+     */
+    public static BigDecimal hardFloor(BigDecimal avgCost, double hardStopPct) {
+        return avgCost.multiply(BigDecimal.valueOf(1 - hardStopPct / 100.0), MathContext.DECIMAL64);
+    }
+
+    /** 추적손절선 — 보유 중 최고가 - trailPct%. 용도는 {@link #hardFloor}와 동일. */
+    public static BigDecimal trailFloor(BigDecimal peak, double trailPct) {
+        return peak.multiply(BigDecimal.valueOf(1 - trailPct / 100.0), MathContext.DECIMAL64);
     }
 }

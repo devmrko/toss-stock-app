@@ -4,6 +4,8 @@ import com.cloudhandson.tossstock.briefing.DiscordClient;
 import com.cloudhandson.tossstock.market.DailyOhlcv;
 import com.cloudhandson.tossstock.market.DailyOhlcvMapper;
 import com.cloudhandson.tossstock.market.UniverseMapper;
+import com.cloudhandson.tossstock.news.NewsSignals;
+import com.cloudhandson.tossstock.news.StockNews;
 import com.cloudhandson.tossstock.news.StockNewsMapper;
 import com.cloudhandson.tossstock.toss.PriceCache;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
@@ -26,6 +28,9 @@ import java.util.Map;
 public class AutoTradeScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(AutoTradeScheduler.class);
+
+    /** 결정근거 message(VARCHAR2(500))에 담을 뉴스 제목 길이 상한(#832). */
+    private static final int MAX_NEWS_TITLE_LEN = 45;
 
     private final AutoTradeProperties props;
     private final AutoTradeStateMapper stateMapper;
@@ -116,7 +121,11 @@ public class AutoTradeScheduler {
             exit = ExitReason.NEWS_FADED;
         }
         if (exit != ExitReason.NONE) {
-            orderExecutor.sell(p, exit, current);
+            // 결정근거 스냅샷(#832) — 하드/트레일 손절선은 판정에 쓴 바로 그 공식으로 재계산(부수효과 없음).
+            String rationale = SellRationale.describe(exit, p.getEntryPrice(), peak, current,
+                    TrailingStopCalculator.hardFloor(p.getEntryPrice(), props.hardStopPct()),
+                    TrailingStopCalculator.trailFloor(peak, props.trailStopPct()));
+            orderExecutor.sell(p, exit, current, rationale);
         }
     }
 
@@ -191,10 +200,59 @@ public class AutoTradeScheduler {
             if (current == null) {
                 continue;
             }
-            if (orderExecutor.buy(c.getSymbol(), c.getMarket(), props.perSymbolBudget(), current)) {
+            String rationale = buyRationale(c, recent, valuation, cheap, rerateCatalyst, score);
+            if (orderExecutor.buy(c.getSymbol(), c.getMarket(), props.perSymbolBudget(), current, rationale)) {
                 filled++;
                 notifyMacroContext(c); // 매수 게이트에는 안 넣음 — 참고용 거시 맥락만 별도 안내(2026-09-29)
             }
+        }
+    }
+
+    /**
+     * 매수 결정근거 스냅샷(#832) — 게이트 통과에 쓴 값들을 그대로 재사용해 포맷만 한다. 판정은 하지 않는다.
+     * 인기 트리거 수치는 {@link PopularityChecker}의 동일 공식 추출값, 트리거 뉴스는 로컬 DB 1회 조회.
+     */
+    private String buyRationale(AutoTradeCandidate c, List<DailyOhlcv> recent, Valuation valuation,
+                                 boolean cheap, boolean rerateCatalyst, FundamentalScore score) {
+        String newsLabel = topActiveNewsLabel(c.getSymbol());
+        // catalystHeadline 은 비워 둔다 — 촉매 뉴스도 결국 같은 활성 뉴스 집합에서 나오므로 "뉴스:" 절과
+        // 중복된다. 촉매 경로 자체는 "(재평가촉매)" 태그로 드러난다.
+        return BuyRationale.describe(valuation, cheap, rerateCatalyst, null, score,
+                PopularityChecker.isVolumeSpike(recent, props.volumeSpikeWindowDays(), props.volumeSpikeMultiplier()),
+                PopularityChecker.volumeRatio(recent, props.volumeSpikeWindowDays()),
+                PopularityChecker.isPriceMoveSignificant(recent, props.priceMovePct()),
+                PopularityChecker.priceMovePct(recent),
+                newsLabel);
+    }
+
+    /**
+     * 활성 뉴스 중 해당 종목 타겟 최고 레벨의 제목을 {@code S5 "제목"} 형태로. 없으면 null.
+     * 로깅용 부가정보라 조회 실패가 매수를 막으면 안 됨 — 예외는 삼키고 null(= "뉴스:N/A").
+     */
+    private String topActiveNewsLabel(String symbol) {
+        try {
+            int bestLevel = 0;
+            String bestTitle = null;
+            for (StockNews n : newsMapper.active(symbol, 5)) {
+                String level = NewsSignals.levelOf(n.getSentiment(), symbol);
+                if (level == null) {
+                    continue;
+                }
+                int lv = Integer.parseInt(level.substring(1));
+                if (lv > bestLevel) {
+                    bestLevel = lv;
+                    bestTitle = n.getTitle();
+                }
+            }
+            if (bestTitle == null) {
+                return null;
+            }
+            String title = bestTitle.length() > MAX_NEWS_TITLE_LEN
+                    ? bestTitle.substring(0, MAX_NEWS_TITLE_LEN) + "…" : bestTitle;
+            return "S" + bestLevel + " \"" + title + "\"";
+        } catch (RuntimeException e) {
+            log.warn("결정근거용 뉴스 조회 실패(symbol={}) — 근거에 뉴스 생략: {}", symbol, e.toString());
+            return null;
         }
     }
 

@@ -77,4 +77,39 @@ class PopularityCheckerTest {
         List<DailyOhlcv> rows = withPriceMove(100_000, 102_000); // 정확히 +2.0%
         assertThat(PopularityChecker.isPriceMoveSignificant(rows, 2.0)).isTrue();
     }
+
+    // --- 결정근거 로깅용 수치 추출(#832) — 판정 함수와 어긋나면 로그가 거짓말을 하므로 함께 묶어서 검증 ---
+
+    @Test
+    void volume_ratio_matches_the_spike_decision() {
+        List<DailyOhlcv> rows = flatVolumeSeries(21, 100_000, 500_000);
+
+        double ratio = PopularityChecker.volumeRatio(rows, 20);
+
+        assertThat(ratio).isEqualTo(5.0);
+        assertThat(ratio >= 3.0).isEqualTo(PopularityChecker.isVolumeSpike(rows, 20, 3.0));
+        assertThat(ratio >= 6.0).isEqualTo(PopularityChecker.isVolumeSpike(rows, 20, 6.0));
+    }
+
+    @Test
+    void volume_ratio_is_zero_when_history_insufficient() {
+        assertThat(PopularityChecker.volumeRatio(flatVolumeSeries(5, 100_000, 500_000), 20)).isZero();
+        assertThat(PopularityChecker.volumeRatio(null, 20)).isZero();
+    }
+
+    @Test
+    void price_move_pct_matches_the_price_move_decision() {
+        List<DailyOhlcv> rows = withPriceMove(1_490_000, 1_528_000);
+
+        double pct = PopularityChecker.priceMovePct(rows);
+
+        assertThat(pct).isCloseTo(2.55, org.assertj.core.data.Offset.offset(0.01));
+        assertThat(pct >= 2.0).isEqualTo(PopularityChecker.isPriceMoveSignificant(rows, 2.0));
+    }
+
+    @Test
+    void price_move_pct_is_zero_when_history_insufficient() {
+        assertThat(PopularityChecker.priceMovePct(null)).isZero();
+        assertThat(PopularityChecker.priceMovePct(List.of())).isZero();
+    }
 }

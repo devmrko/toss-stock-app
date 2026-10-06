@@ -64,4 +64,24 @@ class TrailingStopCalculatorTest {
                 BigDecimal.ZERO, BigDecimal.valueOf(100), BigDecimal.valueOf(100), 10, 10))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    // --- 결정근거 로깅용 손절선 공개(#832) — decide 가 쓰는 값과 동일해야 로그가 진실을 말한다 ---
+
+    @Test
+    void floors_are_the_same_values_decide_uses() {
+        BigDecimal avgCost = BigDecimal.valueOf(100);
+        BigDecimal peak = BigDecimal.valueOf(150);
+
+        BigDecimal hard = TrailingStopCalculator.hardFloor(avgCost, 10);
+        BigDecimal trail = TrailingStopCalculator.trailFloor(peak, 10);
+
+        assertThat(hard).isEqualByComparingTo("90");
+        assertThat(trail).isEqualByComparingTo("135");
+        // 바인딩 스탑(= max) 바로 위는 보유, 바로 아래는 매도 — decide 와 경계가 일치.
+        BigDecimal binding = hard.max(trail);
+        assertThat(TrailingStopCalculator.decide(binding.add(BigDecimal.ONE), peak, avgCost, 10, 10))
+                .isEqualTo(ExitReason.NONE);
+        assertThat(TrailingStopCalculator.decide(binding, peak, avgCost, 10, 10))
+                .isEqualTo(ExitReason.TRAIL_STOP);
+    }
 }

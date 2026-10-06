@@ -1,17 +1,22 @@
 package com.cloudhandson.tossstock.rangetrade;
 
 import com.cloudhandson.tossstock.briefing.DiscordClient;
+import com.cloudhandson.tossstock.market.DailyOhlcv;
 import com.cloudhandson.tossstock.market.DailyOhlcvMapper;
+import com.cloudhandson.tossstock.market.DailyRangeStats;
 import com.cloudhandson.tossstock.toss.PriceCache;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 import static com.cloudhandson.tossstock.rangetrade.RangeTradeTestFixtures.props;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -95,7 +100,7 @@ class RangeTradeSchedulerTest {
 
         scheduler.tick();
 
-        verify(orderExecutor).sell(any(), eq(RangeExitReason.PROFIT_TAKE), any());
+        verify(orderExecutor).sell(any(), eq(RangeExitReason.PROFIT_TAKE), any(), any());
         verify(dailyMapper).rangeStatsBatch(any(LocalDate.class), anyInt()); // 스캔까지 도달
     }
 
@@ -110,7 +115,7 @@ class RangeTradeSchedulerTest {
 
         scheduler.tick();
 
-        verify(orderExecutor).sell(any(), eq(RangeExitReason.BAD_NEWS), any());
+        verify(orderExecutor).sell(any(), eq(RangeExitReason.BAD_NEWS), any(), any());
     }
 
     @Test
@@ -123,7 +128,7 @@ class RangeTradeSchedulerTest {
 
         scheduler.tick();
 
-        verify(orderExecutor).sell(any(), eq(RangeExitReason.RANGE_BREAKDOWN), any());
+        verify(orderExecutor).sell(any(), eq(RangeExitReason.RANGE_BREAKDOWN), any(), any());
     }
 
     @Test
@@ -135,7 +140,7 @@ class RangeTradeSchedulerTest {
 
         scheduler.tick();
 
-        verify(orderExecutor).sell(any(), eq(RangeExitReason.RANGE_BREAKDOWN), any()); // 매도는 수행
+        verify(orderExecutor).sell(any(), eq(RangeExitReason.RANGE_BREAKDOWN), any(), any()); // 매도는 수행
         verify(dailyMapper, never()).rangeStatsBatch(any(LocalDate.class), anyInt()); // 신규 스캔은 안 함
     }
 
@@ -174,6 +179,66 @@ class RangeTradeSchedulerTest {
 
         verify(stateMapper, never()).tripCircuitBreaker(any());
         verify(dailyMapper).rangeStatsBatch(any(LocalDate.class), anyInt()); // 스캔까지 정상 진행
+    }
+
+    @Test
+    void sell_passes_decision_rationale_with_binding_threshold() {
+        // #832 — 매도 호출 시 "어느 임계선이 발동했고 진입 대비 얼마였나"가 근거 문자열로 전달돼야 한다.
+        when(stateMapper.find()).thenReturn(state(false));
+        when(positionMapper.findHolding()).thenReturn(List.of(holding(1L, "AAAAAA")));
+        when(positionMapper.countHolding()).thenReturn(1);
+        when(priceCache.get(List.of("AAAAAA")))
+                .thenReturn(List.of(new TossPrice("AAAAAA", "94000", "KRW", null))); // 손절선(95,000) 이탈
+
+        scheduler.tick();
+
+        ArgumentCaptor<String> rationale = ArgumentCaptor.forClass(String.class);
+        verify(orderExecutor).sell(any(), eq(RangeExitReason.RANGE_BREAKDOWN), any(), rationale.capture());
+        assertThat(rationale.getValue()).isEqualTo("밴드이탈손절(손절선95000) 현재94000 진입105000 수익-10.48% "
+                + "밴드100000~130000 익절선117000/손절선95000");
+    }
+
+    @Test
+    void buy_passes_decision_rationale_with_band_and_entry_ceiling() {
+        // #832 — 매수 호출 시 밴드/진입상한/밴드 내 위치가 근거 문자열로 전달돼야 한다.
+        when(stateMapper.find()).thenReturn(state(false));
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(dailyMapper.rangeStatsBatch(any(LocalDate.class), anyInt())).thenReturn(List.of(stats("AAAAAA")));
+        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class)))
+                .thenReturn(oscillatingBars("AAAAAA", 61, 100_000, 130_000));
+
+        scheduler.tick();
+
+        ArgumentCaptor<String> rationale = ArgumentCaptor.forClass(String.class);
+        verify(orderExecutor).buy(eq("AAAAAA"), any(), any(), any(), any(), rationale.capture());
+        assertThat(rationale.getValue())
+                .isEqualTo("밴드100000~130000 진입상한110000 매수가100000(밴드내0%)");
+    }
+
+    /** 밴드[low, high] 안에서 종가가 왕복하는 일봉 n개(추세 없음) — 종목코드까지 지정해 loadBars 키와 맞춘다. */
+    private static List<DailyOhlcv> oscillatingBars(String symbol, int n, double low, double high) {
+        List<DailyOhlcv> out = new ArrayList<>();
+        LocalDate start = LocalDate.of(2026, 1, 5);
+        for (int i = 0; i < n; i++) {
+            BigDecimal close = BigDecimal.valueOf(i % 2 == 0 ? low : high);
+            out.add(new DailyOhlcv(symbol, start.plusDays(i), close, BigDecimal.valueOf(high),
+                    BigDecimal.valueOf(low), close, 1_000_000L));
+        }
+        return out;
+    }
+
+    /** 1차 스크리닝을 통과하는 박스권 통계(밴드 100,000~130,000 · 추세 없음). */
+    private static DailyRangeStats stats(String symbol) {
+        DailyRangeStats s = new DailyRangeStats();
+        s.setSymbol(symbol);
+        s.setBarCount(61);
+        s.setMaxHigh(BigDecimal.valueOf(130_000));
+        s.setMinLow(BigDecimal.valueOf(100_000));
+        s.setLastClose(BigDecimal.valueOf(100_000));
+        s.setFirstHalfAvgClose(BigDecimal.valueOf(115_000));
+        s.setSecondHalfAvgClose(BigDecimal.valueOf(115_000));
+        return s;
     }
 
     @Test

@@ -20,6 +20,12 @@ import static org.mockito.Mockito.*;
  */
 class OrderExecutorTest {
 
+    /** #832 결정근거 스냅샷 — message 앞부분에 그대로 남아야 한다. */
+    private static final String RATIONALE =
+            "PER11.6/PBR0.47(저평가) 펀더3/5(실적X재무O배당O유동O강도X) 인기:가격+2.3% 뉴스:S5 \"호재\"";
+    private static final String SELL_RATIONALE =
+            "하드스탑(피크50000→현재45000,-10%) 진입50000 수익-10% 스탑45000(하드45000/트레일45000)";
+
     private AutoTradeProperties props;
     private AutoTradeStateMapper stateMapper;
     private AutoTradePositionMapper positionMapper;
@@ -53,7 +59,7 @@ class OrderExecutorTest {
     void global_dry_run_true_never_calls_place_order() {
         when(stateMapper.find()).thenReturn(stateWith(false)); // DB는 false 여도
 
-        boolean ok = executor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000));
+        boolean ok = executor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
 
         assertThat(ok).isTrue();
         verify(toss, never()).placeOrder(any());
@@ -68,7 +74,7 @@ class OrderExecutorTest {
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(true)); // DB가 true면 이중 안전장치로 드라이런
 
-        liveExecutor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000));
+        liveExecutor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
 
         verify(toss, never()).placeOrder(any());
     }
@@ -84,7 +90,7 @@ class OrderExecutorTest {
         when(toss.placeOrder(any())).thenReturn(new TossOrder("ORD1", "005930", "BUY", "MARKET", "FILLED",
                 null, "20", "1000000", "KRW", null, null, exec));
 
-        boolean ok = liveExecutor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000));
+        boolean ok = liveExecutor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
 
         assertThat(ok).isTrue();
         verify(toss, times(1)).placeOrder(any());
@@ -93,7 +99,7 @@ class OrderExecutorTest {
 
     @Test
     void budget_over_cap_never_creates_order() {
-        boolean ok = executor.buy("005930", "KR", BigDecimal.valueOf(1_000_001), BigDecimal.valueOf(50_000));
+        boolean ok = executor.buy("005930", "KR", BigDecimal.valueOf(1_000_001), BigDecimal.valueOf(50_000), RATIONALE);
 
         assertThat(ok).isFalse();
         verify(toss, never()).placeOrder(any());
@@ -115,7 +121,7 @@ class OrderExecutorTest {
                 null, "20", "1000000", "KRW", null, null, exec));
         doThrow(new RuntimeException("ORA-12899: value too large")).when(logMapper).insert(any());
 
-        boolean ok = liveExecutor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000));
+        boolean ok = liveExecutor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
 
         assertThat(ok).isTrue();
         verify(positionMapper).insert(argThat(p -> !p.isDryRun()));
@@ -137,8 +143,59 @@ class OrderExecutorTest {
         dryRunPosition.setEntryQty(BigDecimal.valueOf(20));
         dryRunPosition.setDryRun(true); // 드라이런으로 진입한 가상 포지션
 
-        liveExecutor.sell(dryRunPosition, ExitReason.HARD_STOP, BigDecimal.valueOf(45_000));
+        liveExecutor.sell(dryRunPosition, ExitReason.HARD_STOP, BigDecimal.valueOf(45_000), SELL_RATIONALE);
 
         verify(toss, never()).placeOrder(any()); // 전역은 실주문 모드지만 이 포지션은 가상이라 실주문 안 나감
+    }
+
+    @Test
+    void buy_log_message_carries_rationale_before_outcome() {
+        when(stateMapper.find()).thenReturn(stateWith(true));
+
+        executor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
+
+        verify(logMapper).insert(argThat(e ->
+                (RATIONALE + " | 드라이런 — 실주문 안 함").equals(e.getMessage())));
+    }
+
+    @Test
+    void sell_log_message_carries_rationale_even_when_order_fails() {
+        AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30,
+                new AutoTradeProperties.Gate(35));
+        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
+        when(stateMapper.find()).thenReturn(stateWith(false));
+        when(toss.placeOrder(any())).thenThrow(new RuntimeException("HTTP 429 too many requests"));
+
+        AutoTradePosition p = new AutoTradePosition();
+        p.setId(1L);
+        p.setSymbol("005930");
+        p.setMarket("KR");
+        p.setEntryPrice(BigDecimal.valueOf(50_000));
+        p.setEntryQty(BigDecimal.valueOf(20));
+        p.setDryRun(false);
+
+        boolean ok = liveExecutor.sell(p, ExitReason.TRAIL_STOP, BigDecimal.valueOf(45_000), SELL_RATIONALE);
+
+        assertThat(ok).isFalse();
+        // "왜 팔려고 했는지"는 주문 실패와 무관하게 남는다(설계 §6).
+        verify(logMapper).insert(argThat(e -> e.getMessage().startsWith(SELL_RATIONALE + " | 주문 실패: ")));
+    }
+
+    @Test
+    void budget_over_cap_keeps_existing_message_without_rationale() {
+        executor.buy("005930", "KR", BigDecimal.valueOf(1_000_001), BigDecimal.valueOf(50_000), RATIONALE);
+
+        // 매수 자체가 안 된 경로는 기존 메시지 유지(설계 §3) — 호출부가 근거를 넘겼는지와 무관.
+        verify(logMapper).insert(argThat(e -> "예산 상한 초과".equals(e.getMessage())));
+    }
+
+    @Test
+    void over_long_rationale_is_truncated_to_column_limit() {
+        when(stateMapper.find()).thenReturn(stateWith(true));
+
+        executor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), "가".repeat(600));
+
+        verify(logMapper).insert(argThat(e -> e.getMessage().length() == 500));
     }
 }

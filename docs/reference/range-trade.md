@@ -43,17 +43,20 @@
 - 네이버 모바일 API에는 쓸 수 있는 실적발표 예정일 필드가 **없음**(실측 근거는 설계서 §12).
 
 ### `RangeOrderExecutor`
-- `buy(String symbol, BigDecimal budget, BigDecimal currentPrice, BigDecimal rangeLow, BigDecimal rangeHigh) → boolean`
+- `buy(String symbol, BigDecimal budget, BigDecimal currentPrice, BigDecimal rangeLow, BigDecimal rangeHigh, String rationale) → boolean`
   — v1은 KR만이라 market 파라미터가 없다(`market='KR'` 고정, 통화 KRW).
   `budget > perSymbolBudget`이면 주문 자체를 만들지 않고 `false`. 수량은 `budget/price` 내림(정수 주),
   0주면 `false`. 진입 시점 밴드(`rangeLow`/`rangeHigh`)를 포지션에 **고정 저장**(이후 갱신 금지).
-- `sell(RangeTradePosition position, RangeExitReason reason, BigDecimal currentPrice) → boolean`
+- `sell(RangeTradePosition position, RangeExitReason reason, BigDecimal currentPrice, String rationale) → boolean`
   — 드라이런 여부는 **그 포지션의 진입 시점 플래그**를 따른다(가상 진입이 실매도로 바뀌지 않게).
 - **이중 드라이런 안전장치**: `range-trade.dry-run`(설정)과 `range_trade_state.dry_run`(DB) 중
   하나라도 true면 드라이런. 상태 행이 없으면(조회 결과 `null`) 드라이런.
 - **감사로그와 포지션 기록 분리**: `range_trade_order_log` INSERT가 실패해도 예외를 삼키고
   ERROR 로그만 남긴 뒤 포지션 기록/청산 처리를 계속한다(#808 2026-10-01 중복매수 사고 교훈).
 - 주문 실패 시 **재시도하지 않는다**(#808과 동일 원칙).
+- `rationale`(#832): 호출부가 조립한 결정근거 스냅샷을 `message` 앞부분에 남긴다
+  (`<rationale> | <주문결과>`, 500자 절삭). `null`/공백이면 기존 문구만. 예산 상한 초과·수량 0
+  경로는 기존 문구 유지. 상세: `docs/reference/decision-rationale.md`.
 
 ### `RangeTradeScheduler.tick()`
 - `@Scheduled(cron = "${range-trade.cron:0 0 16 * * MON-FRI}", zone = "Asia/Seoul")` — 1일 1회 장마감 후.
@@ -63,7 +66,7 @@
   살아남은 종목만 실제 일봉을 청크(≤900종목/쿼리)로 받아 `LiquidityChecker`+`RangeBoundChecker`로 최종 판정.
 - 현재가 소스: **보유 포지션은 `PriceCache`(실시간), 신규 후보는 윈도우의 최신 종가**(설계서 §12 참고).
 - 로깅: 스캔 단계 대량 스킵 = DEBUG, 최종 후보가 악재/실적 게이트로 막힌 건 = INFO,
-  보유 판정 결과 = INFO, 주문 시도 = `range_trade_order_log`.
+  보유 판정 결과 = INFO, 주문 시도 = `range_trade_order_log`(결정근거 포함 — #832).
 
 ### `DailyOhlcvMapper.rangeStatsBatch(LocalDate fromDate, int windowBars) → List<DailyRangeStats>`
 - KR 유니버스(`universe` 조인) 전 종목에 대해 종목별 최근 `windowBars` 거래일 통계를 한 번에 반환:
@@ -113,5 +116,5 @@
 |---|---|---|
 | `RangeBoundCheckerTest` | 12 | 왕복 패턴 통과/밴드값, 추세 탈락, 폭 상·하한, 데이터 부족, 임계값 경계, 홀수 윈도우, 순수성 |
 | `RangeTradeSignalTest` | 10 | BUY/PROFIT_TAKE/RANGE_BREAKDOWN/NONE, 경계 포함, 입력 검증 예외, 진입 직후 즉시청산 불가, 최악 왕복 수익성 |
-| `RangeTradeSchedulerTest` | 6 | 상태행 없음→무동작, 한 종목 예외가 다른 종목/스캔을 막지 않음, 악재 즉시매도, 하단이탈 손절, 서킷브레이커 트립 시 매도만, 빈 슬롯 없음→스캔 생략 |
-| `RangeOrderExecutorTest` | 11 | 설정/DB 이중 드라이런, 상태행 없음→드라이런, 예산 상한·0주 차단, 감사로그 실패와 포지션/청산 기록 분리, 주문 실패 시 포지션 미기록·재시도 없음, 매도의 포지션 드라이런 우선, exit_reason 기록 |
+| `RangeTradeSchedulerTest` | 10 | 상태행 없음→무동작, 한 종목 예외가 다른 종목/스캔을 막지 않음, 악재 즉시매도, 하단이탈 손절, 서킷브레이커 트립 시 매도만, 빈 슬롯 없음→스캔 생략, 신규 평가손익 트립/정상, 매도·매수에 전달되는 결정근거 문자열(#832) |
+| `RangeOrderExecutorTest` | 15 | 설정/DB 이중 드라이런, 상태행 없음→드라이런, 예산 상한·0주 차단, 감사로그 실패와 포지션/청산 기록 분리, 주문 실패 시 포지션 미기록·재시도 없음, 매도의 포지션 드라이런 우선, exit_reason 기록, message의 결정근거 조합·500자 절삭(#832) |

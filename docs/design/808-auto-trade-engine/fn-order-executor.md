@@ -75,3 +75,11 @@ OrderResult sell(Long positionId, String reason)
 - 인수조건: #808 "dryRun=true일 때 placeOrder 호출 0회", "서킷브레이커 트립 시 매도 허용".
 - 관련 ADR: 없음. **이 함수는 리뷰(06-Reviewer) 단계에서 특별히 꼼꼼히 볼 것** — 실제 자금 이동 지점.
 - **치명 버그 — 2026-10-01 발견·해소**: 012330(현대모비스) 실매수가 2026-10-01 09:00~09:05 사이 5회 체결됐는데 `auto_trade_order_log`/`auto_trade_position` 둘 다 기록 0건이었던 실사례. 원인: Toss가 반환하는 실제 `orderId`가 86자인데 `toss_order_id` 컬럼이 `VARCHAR2(50)`이라 `saveLog` INSERT가 `ORA-12899`로 실패 → 예외가 `buy()`를 그 자리에서 중단시켜 `positionMapper.insert()`(§7에서 "상위 책임"이라 언급한 "이미 보유 중" 체크의 전제조건)까지 도달하지 못함 → 포지션이 없으니 다음 틱에서도 "이미 보유 중"으로 안 걸려 같은 종목을 반복 매수 → 실잔고 소진. 사용자가 실제 매수가능금액(Toss `/api/v1/buying-power`)과 보유수량(`/api/v1/sellable-quantity`)을 직접 조회해 발견("니가 샀다고"). 컬럼을 `VARCHAR2(200)`으로 넓히고, `saveLog`→`saveLogSafely`로 감사로그 실패가 포지션 기록을 막지 못하게 방어(§6) — 두 수정 중 후자가 더 근본적(향후 어떤 이유로 로그 INSERT가 실패해도 이 사고가 재발하지 않음). 실계좌 012330 실보유분은 `auto_trade_position`에 수동 reconcile(평단 377,650원, 10주).
+
+## 12. 부록 — 결정근거 파라미터 추가(#832, 2026-10-06)
+- 시그니처에 `String rationale`이 1개 추가됐다: `buy(symbol, market, budget, currentPrice, rationale)`,
+  `sell(position, reason, currentPrice, rationale)`. 주문 실행·드라이런 분기·포지션 기록 등
+  §6~§8의 제어흐름은 **변경 없음** — `message` 조합부만 `"<rationale> | <기존 문구>"`가 된다
+  (`null`/공백이면 기존 문구 그대로, 500자 절삭 유지, 예산초과·수량0 경로는 기존 문구 유지).
+- 설계: `docs/design/832-decision-rationale-logging/README.md` ·
+  사양: `docs/reference/decision-rationale.md`.

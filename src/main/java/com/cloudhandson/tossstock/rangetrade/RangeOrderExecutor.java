@@ -54,10 +54,12 @@ public class RangeOrderExecutor {
     /**
      * 밴드 하단/상단은 <b>진입 시점 값으로 고정 저장</b>된다 — 이후 가격이 움직여도 갱신하지 않는다(README §9).
      *
+     * @param rationale 매수 결정근거 스냅샷({@link RangeBuyRationale#describe}) — 체결 성공/주문실패
+     *                  로그의 message 앞부분에 남는다(#832). null/공백이면 기존 메시지만 남긴다.
      * @return 포지션이 기록됐으면 true(드라이런 포함), 차단/실패면 false
      */
     public boolean buy(String symbol, BigDecimal budget, BigDecimal currentPrice,
-                       BigDecimal rangeLow, BigDecimal rangeHigh) {
+                       BigDecimal rangeLow, BigDecimal rangeHigh, String rationale) {
         if (budget.compareTo(props.perSymbolBudget()) > 0) {
             log.warn("매수 차단(예산 상한 초과): symbol={}, budget={}, cap={}", symbol, budget, props.perSymbolBudget());
             saveLogSafely(symbol, "BUY", "BUY_SIGNAL", true, null, null, null, false, "예산 상한 초과");
@@ -88,7 +90,8 @@ public class RangeOrderExecutor {
             }
         }
 
-        saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, qty, filledPrice, tossOrderId, success, message);
+        saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, qty, filledPrice, tossOrderId, success,
+                compose(rationale, message));
         if (!success) {
             notify("⚠️ [레인지] " + symbol + " 매수 실패 — " + message);
             return false; // 재시도 안 함(#808과 동일 원칙)
@@ -111,7 +114,12 @@ public class RangeOrderExecutor {
         return true;
     }
 
-    public boolean sell(RangeTradePosition position, RangeExitReason reason, BigDecimal currentPrice) {
+    /**
+     * @param rationale 매도 결정근거 스냅샷({@link RangeSellRationale#describe}) — 주문이 실패해도
+     *                  "왜 팔려고 했는지"는 유의미하므로 그대로 남긴다(#832).
+     */
+    public boolean sell(RangeTradePosition position, RangeExitReason reason, BigDecimal currentPrice,
+                        String rationale) {
         // 진입 시점의 dryRun 을 우선 — 가상 진입이 실매도로 바뀌는 모순 방지(#808 OrderExecutor와 동일).
         boolean dryRun = position.isDryRun();
         String tossOrderId = null;
@@ -132,7 +140,7 @@ public class RangeOrderExecutor {
         }
 
         saveLogSafely(position.getSymbol(), "SELL", reason.name(), dryRun, position.getEntryQty(), filledPrice,
-                tossOrderId, success, message);
+                tossOrderId, success, compose(rationale, message));
         if (!success) {
             notify("⚠️ [레인지] " + position.getSymbol() + " 매도 실패 — " + message);
             return false;
@@ -145,6 +153,17 @@ public class RangeOrderExecutor {
         notify((dryRun ? "🧪[레인지·드라이런] " : "✅ [레인지] ") + position.getSymbol() + " 매도(" + reason
                 + ") — 가격 " + filledPrice + ", 손익 " + String.format("%.2f", pnlPct) + "%");
         return true;
+    }
+
+    /**
+     * 결정근거 + 주문결과를 message 한 칸에 담는다(#832): {@code "<rationale> | <outcome>"}.
+     * rationale 이 없으면(예산초과/수량0 등 호출부가 근거를 안 넘기는 경로) 기존 메시지를 그대로 둔다.
+     */
+    private static String compose(String rationale, String outcome) {
+        if (rationale == null || rationale.isBlank()) {
+            return truncate(outcome);
+        }
+        return truncate(rationale + " | " + outcome);
     }
 
     /** message 컬럼이 VARCHAR2(500)이라 Toss 응답 본문까지 담은 예외 메시지가 넘칠 수 있어 방어적으로 자름. */

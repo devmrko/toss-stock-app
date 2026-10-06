@@ -111,6 +111,31 @@
 | `OrderExecutor.buy`/`sell`(수정) | 파라미터 1개(`rationale`) 추가, message 조합부만 변경 | `buy(String, String, BigDecimal, BigDecimal, String rationale)`, `sell(AutoTradePosition, ExitReason, BigDecimal, String rationale)` | 기존 + rationale | 기존과 동일(boolean) | 기존과 동일(실주문 경로 변경 없음) | 단순(제어흐름 불변) |
 | `RangeOrderExecutor.buy`/`sell`(수정) | 동일 | `buy(String, BigDecimal, BigDecimal, BigDecimal, BigDecimal, String rationale)`, `sell(RangeTradePosition, RangeExitReason, BigDecimal, String rationale)` | 기존 + rationale | 기존과 동일 | 기존과 동일 | 단순 |
 
+### 7-1. 구현 중 추가 등재 (2026-10-06, Developer)
+
+§8이 요구한 "같은 공식으로 세부값 재계산"을 **판정 함수와 같은 자리에서** 하기 위해, 아래 순수
+접근자 4개를 추가 등재한다(기존 판정 함수의 시그니처·반환형·판정 결과는 그대로. 스케줄러에
+공식을 복제하는 쪽이 드리프트 위험이 더 커서 이쪽을 택했다).
+
+| 함수 | 책임(1줄) | 시그니처 | 출력 | 에러/실패 | 복잡? |
+|------|-----------|----------|------|-----------|-------|
+| `PopularityChecker.volumeRatio` | 평균 대비 거래량 배수 추출(로깅용) | `static double volumeRatio(List<DailyOhlcv> rows, int window)` | double | 데이터 부족/평균0 → `0` | 단순 |
+| `PopularityChecker.priceMovePct` | 당일 가격변동률(%) 추출(로깅용) | `static double priceMovePct(List<DailyOhlcv> rows)` | double | 데이터 부족 → `0` | 단순 |
+| `TrailingStopCalculator.hardFloor` | 하드손절선 공개(기존 `decide` 내부식 그대로) | `static BigDecimal hardFloor(BigDecimal avgCost, double hardStopPct)` | BigDecimal | 입력 검증은 `decide` 책임 | 단순 |
+| `TrailingStopCalculator.trailFloor` | 추적손절선 공개(동일) | `static BigDecimal trailFloor(BigDecimal peak, double trailPct)` | BigDecimal | 동일 | 단순 |
+
+- `decide`는 이 두 접근자를 호출하도록 식만 추출했다(산술·MathContext·경계 동일). 판정 결과가
+  바뀌지 않음은 `TrailingStopCalculatorTest`의 경계 테스트 + 신규 일치성 테스트로 묶었다.
+- `volumeRatio`/`priceMovePct`는 기존 boolean 판정과 **같은 공식의 별도 함수**이므로, 임계값 비교
+  결과가 boolean 판정과 일치하는지 `PopularityCheckerTest`에서 함께 검증한다(드리프트 방지).
+- `BuyRationale.describe`의 `catalystHeadline`은 **호출부에서 비워 둔다**: 촉매 뉴스도 같은
+  `active(symbol, 5)` 집합에서 나오므로 "뉴스:" 절과 문자열이 중복되고 따옴표가 중첩된다. 촉매
+  경로는 `(재평가촉매)` 태그로 충분히 드러나고, 헤드라인은 "뉴스:" 절이 담당한다(포매터는 파라미터를
+  계속 지원 — 별도 헤드라인을 아는 호출부가 생기면 그대로 쓸 수 있다).
+- 스케줄러 내부 private 보조(설계 범위 안, 공개 API 아님): `AutoTradeScheduler#buyRationale`(값 조립),
+  `AutoTradeScheduler#topActiveNewsLabel`(활성 뉴스 1회 조회 → `S5 "제목"`, 조회 실패는 삼키고
+  `null` → "뉴스:N/A" — 로깅 때문에 매수가 막히면 안 되므로), `RangeTradeScheduler#sellRationale`.
+
 > `hasRecentCatalyst`가 매칭된 키워드/헤드라인을 반환하지 않으므로, `catalystHeadline`/
 > `triggerNewsTitle`은 rationale 조합 시점에 `newsMapper.active(symbol, 5)`를 한 번 더
 > 조회해(로컬 DB, 외부 API 아님) 가장 높은 레벨의 활성 뉴스 제목을 뽑아 채운다. 이건

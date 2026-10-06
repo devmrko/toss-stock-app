@@ -50,6 +50,41 @@ public final class PopularityChecker {
         return pct >= pctThreshold;
     }
 
+    /**
+     * 평균 대비 거래량 배수(판정 아님 — 결정근거 로깅용 수치 추출, #832). 데이터 부족/평균 0이면 0.
+     * {@link #isVolumeSpike}와 동일 공식이며, 두 경로가 어긋나지 않는지는 테스트로 묶어 둔다.
+     */
+    public static double volumeRatio(List<DailyOhlcv> rows, int window) {
+        List<DailyOhlcv> sorted = sortedOrNull(rows, window);
+        if (sorted == null) {
+            return 0;
+        }
+        DailyOhlcv latest = sorted.get(sorted.size() - 1);
+        List<DailyOhlcv> prior = sorted.subList(sorted.size() - 1 - window, sorted.size() - 1);
+        double avg = prior.stream().mapToLong(DailyOhlcv::getVolume).average().orElse(0);
+        if (avg <= 0 || latest.getVolume() == null) {
+            return 0;
+        }
+        return latest.getVolume() / avg;
+    }
+
+    /**
+     * 당일(최신 거래일) 종가의 전일 대비 변동률(%) (판정 아님 — 결정근거 로깅용 수치 추출, #832).
+     * 데이터 부족/전일 종가 결측이면 0. {@link #isPriceMoveSignificant}와 동일 공식.
+     */
+    public static double priceMovePct(List<DailyOhlcv> rows) {
+        List<DailyOhlcv> sorted = sortedOrNull(rows, 1);
+        if (sorted == null) {
+            return 0;
+        }
+        BigDecimal latest = sorted.get(sorted.size() - 1).getCloseP();
+        BigDecimal prev = sorted.get(sorted.size() - 2).getCloseP();
+        if (latest == null || prev == null || prev.signum() <= 0) {
+            return 0;
+        }
+        return latest.subtract(prev).divide(prev, MathContext.DECIMAL64).doubleValue() * 100;
+    }
+
     /** 거래량 스파이크 OR 가격변동 — 둘 중 하나만 있어도 "인기"로 인정. */
     public static boolean isPopular(List<DailyOhlcv> rows, int window, double volumeThreshold, double priceMovePct) {
         return isVolumeSpike(rows, window, volumeThreshold) || isPriceMoveSignificant(rows, priceMovePct);
