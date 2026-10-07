@@ -34,6 +34,15 @@ public class TossAuthClient {
         return cache.accessToken();
     }
 
+    /**
+     * 캐시의 로컬 만료시각을 무시하고 즉시 재발급(#843, 2026-10-07). 토큰이 서버측에서 먼저
+     * 무효화되면(원인 무관) 로컬 캐시는 "아직 안 지났다"고 보고 같은 토큰을 계속 써서 401이
+     * 반복됨 — TossApiClient가 401을 받으면 이걸 호출해 강제로 새 토큰을 받는다.
+     */
+    public synchronized void forceRefresh() {
+        cache = requestToken();
+    }
+
     TossToken requestToken() {
         String raw = props.clientKey() + ":" + props.secretKey();
         String basic = Base64.getEncoder().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
