@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>자동매매 현황 · 모멘텀 / 레인지</title>
+  <style>
+    :root { --up:#ff6b6b; --down:#4dabf7; --line:#2a2f37; --muted:#8b9199; --bg:#14161a; --panel:#1e2127; --th:#252a31; --text:#e6e8eb; }
+    * { box-sizing:border-box; }
+    body { font-family:-apple-system,"Apple SD Gothic Neo",Pretendard,sans-serif; margin:0; background:var(--bg); color:var(--text); }
+    .topnav{display:flex;gap:4px;padding:8px 24px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;z-index:40;}
+    .topnav a{padding:7px 14px;border-radius:8px;text-decoration:none;color:#c1c6cc;font-size:14px;font-weight:600;}
+    .topnav a:hover{background:#252a31;}
+    .topnav a.active{background:#e6e8eb;color:#14161a;}
+    header { padding:18px 24px; background:var(--panel); border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+    h1 { font-size:20px; margin:0; color:#f1f3f5; }
+    h2 { font-size:16px; margin:0 0 10px; color:#f1f3f5; }
+    .sub { color:var(--muted); font-size:13px; }
+    .wrap { width:92%; max-width:1500px; margin:0 auto; padding:20px 24px; }
+    section.engine { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:20px; }
+    .badges { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+    .badge { font-size:12px; font-weight:700; padding:3px 10px; border-radius:10px; }
+    .badge.live { background:#2b1d1d; color:#ff8787; } .badge.dry { background:#1d2b33; color:#74c0fc; }
+    .badge.cb-ok { background:#1d2b1d; color:#69db7c; } .badge.cb-tripped { background:#2b1d1d; color:#ff6b6b; }
+    .badge.budget { background:#252a31; color:#aeb4bb; }
+    table { width:100%; border-collapse:collapse; margin-bottom:10px; }
+    th,td { padding:8px 10px; text-align:right; border-bottom:1px solid var(--line); font-size:13px; }
+    th { background:var(--th); color:#aeb4bb; font-weight:600; font-size:11px; }
+    th:nth-child(1),td:nth-child(1){ text-align:left; }
+    td.num { font-variant-numeric:tabular-nums; }
+    .up{color:var(--up);} .down{color:var(--down);} .flat{color:var(--muted);}
+    .dimv{color:#6f757c;}
+    .tag{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;margin-left:5px;}
+    .tag.dry{background:#1d2b33;color:#74c0fc;} .tag.fail{background:#2b1d1d;color:#ff6b6b;}
+    .sidetag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;}
+    .sidetag.BUY{background:#2b1d1d;color:#ff6b6b;} .sidetag.SELL{background:#16384f;color:#74c0fc;}
+    .empty{text-align:center;color:var(--muted);padding:24px;font-size:13px;}
+    .tblwrap{overflow-x:auto;}
+  </style>
+</head>
+<body>
+  <nav class="topnav">
+    <a href="/top50.html">🔥 탑50</a>
+    <a href="/watchlist.html">📈 워치리스트</a>
+    <a href="/news.html">📰 뉴스</a>
+    <a href="/holdings.html">💼 내 보유</a>
+    <a href="/autotrade.html" class="active">🤖 자동매매</a>
+  </nav>
+  <header>
+    <h1>🤖 자동매매 현황</h1>
+    <span class="sub">#808 모멘텀 · #818 레인지 스윙 · 읽기전용 · 5초 갱신</span>
+  </header>
+  <div class="wrap">
+    <section class="engine" id="momentum">
+      <h2>#808 모멘텀 엔진</h2>
+      <div class="badges" id="momentum-badges"></div>
+      <h3 style="font-size:13px;color:var(--muted);margin:0 0 6px;">보유종목</h3>
+      <div class="tblwrap"><table id="momentum-holdings"><thead></thead><tbody></tbody></table></div>
+      <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;">최근 주문로그</h3>
+      <div class="tblwrap"><table id="momentum-logs"><thead></thead><tbody></tbody></table></div>
+    </section>
+
+    <section class="engine" id="range">
+      <h2>#818 레인지 스윙매매</h2>
+      <div class="badges" id="range-badges"></div>
+      <h3 style="font-size:13px;color:var(--muted);margin:0 0 6px;">보유종목</h3>
+      <div class="tblwrap"><table id="range-holdings"><thead></thead><tbody></tbody></table></div>
+      <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;">최근 주문로그</h3>
+      <div class="tblwrap"><table id="range-logs"><thead></thead><tbody></tbody></table></div>
+    </section>
+  </div>
+
+  <script>
+    const fmtNum = (v) => v === null || v === undefined ? '-' : Number(v).toLocaleString('ko-KR');
+    const fmtPct = (v) => v === null || v === undefined ? '-' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+    const fmtDt = (v) => v ? v.replace('T', ' ').slice(0, 19) : '-';
+    const pnlClass = (v) => v === null || v === undefined ? 'flat' : (v > 0 ? 'up' : (v < 0 ? 'down' : 'flat'));
+
+    function renderBadges(el, s) {
+      el.innerHTML = `
+        <span class="badge ${s.dryRun ? 'dry' : 'live'}">${s.dryRun ? '🧪 드라이런' : '🔴 실거래'}</span>
+        <span class="badge ${s.circuitBreakerTripped ? 'cb-tripped' : 'cb-ok'}">${s.circuitBreakerTripped ? '⛔ 서킷브레이커 트립' : '✅ 정상'}</span>
+        <span class="badge budget">예산 ${fmtNum(s.totalBudget)}원 · 보유 ${s.holdingCount}건</span>`;
+    }
+
+    function renderHoldings(table, rows) {
+      if (!rows || rows.length === 0) {
+        table.innerHTML = '<tbody><tr><td class="empty" colspan="8">보유종목 없음</td></tr></tbody>';
+        return;
+      }
+      table.innerHTML = `
+        <thead><tr>
+          <th>종목</th><th>시장</th><th>매수가</th><th>수량</th><th>현재가</th><th>변동률</th><th>평가손익</th><th>진입시각</th>
+        </tr></thead>
+        <tbody>${rows.map(r => `
+          <tr>
+            <td>${r.symbol}${r.dryRun ? '<span class="tag dry">드라이런</span>' : ''}</td>
+            <td>${r.market}</td>
+            <td class="num">${fmtNum(r.entryPrice)}</td>
+            <td class="num">${fmtNum(r.entryQty)}</td>
+            <td class="num">${fmtNum(r.currentPrice)}</td>
+            <td class="num ${pnlClass(r.priceChangePct)}">${fmtPct(r.priceChangePct)}</td>
+            <td class="num ${pnlClass(r.unrealizedPnl)}">${fmtNum(r.unrealizedPnl)}</td>
+            <td class="dimv">${fmtDt(r.entryAt)}</td>
+          </tr>`).join('')}</tbody>`;
+    }
+
+    function renderLogs(table, rows) {
+      if (!rows || rows.length === 0) {
+        table.innerHTML = '<tbody><tr><td class="empty" colspan="8">최근 주문로그 없음</td></tr></tbody>';
+        return;
+      }
+      table.innerHTML = `
+        <thead><tr>
+          <th>종목</th><th>구분</th><th>사유</th><th>수량</th><th>가격</th><th>수수료</th><th>세금</th><th>시각</th>
+        </tr></thead>
+        <tbody>${rows.map(r => `
+          <tr>
+            <td>${r.symbol}${r.dryRun ? '<span class="tag dry">드라이런</span>' : ''}${r.success ? '' : '<span class="tag fail">실패</span>'}</td>
+            <td><span class="sidetag ${r.side}">${r.side}</span></td>
+            <td class="dimv">${r.reason || '-'}</td>
+            <td class="num">${fmtNum(r.requestedQty)}</td>
+            <td class="num">${fmtNum(r.requestedPrice)}</td>
+            <td class="num dimv">${fmtNum(r.commission)}</td>
+            <td class="num dimv">${fmtNum(r.tax)}</td>
+            <td class="dimv">${fmtDt(r.createdAt)}</td>
+          </tr>`).join('')}</tbody>`;
+    }
+
+    async function loadEngine(prefix, url) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const s = await res.json();
+        renderBadges(document.getElementById(prefix + '-badges'), s);
+        renderHoldings(document.getElementById(prefix + '-holdings'), s.holdingsView);
+        renderLogs(document.getElementById(prefix + '-logs'), s.recentLogs);
+      } catch (e) {
+        document.getElementById(prefix + '-badges').innerHTML =
+          '<span class="badge cb-tripped">⚠️ 조회 실패: ' + e.message + '</span>';
+      }
+    }
+
+    function loadAll() {
+      loadEngine('momentum', '/api/autotrade/status');
+      loadEngine('range', '/api/rangetrade/status');
+    }
+
+    loadAll();
+    setInterval(loadAll, 5000);
+  </script>
+</body>
+</html>

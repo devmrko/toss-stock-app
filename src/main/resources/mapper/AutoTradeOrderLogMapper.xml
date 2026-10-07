@@ -13,4 +13,12 @@
              #{tossOrderId}, #{success}, #{message}, #{commission}, #{tax}, CURRENT_TIMESTAMP)
     </insert>
 
+    <select id="findRecent" resultType="com.cloudhandson.tossstock.autotrade.AutoTradeOrderLog">
+        SELECT id, symbol, side, reason, dry_run, requested_qty, requested_price, toss_order_id,
+               success, message, commission, tax, created_at
+        FROM auto_trade_order_log
+        ORDER BY created_at DESC
+        FETCH FIRST #{limit} ROWS ONLY
+    </select>
+
 </mapper>
