@@ -62,14 +62,15 @@ public class RangeOrderExecutor {
                        BigDecimal rangeLow, BigDecimal rangeHigh, String rationale) {
         if (budget.compareTo(props.perSymbolBudget()) > 0) {
             log.warn("매수 차단(예산 상한 초과): symbol={}, budget={}, cap={}", symbol, budget, props.perSymbolBudget());
-            saveLogSafely(symbol, "BUY", "BUY_SIGNAL", true, null, null, null, false, "예산 상한 초과");
+            saveLogSafely(symbol, "BUY", "BUY_SIGNAL", true, null, null, null, false, "예산 상한 초과", null, null);
             return false;
         }
 
         boolean dryRun = effectiveDryRun();
         BigDecimal qty = budget.divide(currentPrice, 0, RoundingMode.DOWN);
         if (qty.signum() <= 0) {
-            saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, null, currentPrice, null, false, "수량 0(예산 부족)");
+            saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, null, currentPrice, null, false, "수량 0(예산 부족)",
+                    null, null);
             return false;
         }
 
@@ -77,12 +78,16 @@ public class RangeOrderExecutor {
         boolean success = true;
         String message = dryRun ? "드라이런 — 실주문 안 함" : "실주문 체결";
         BigDecimal filledPrice = currentPrice; // 드라이런은 견적가 그대로, 실주문은 아래서 체결가로 교체
+        BigDecimal commission = null;
+        BigDecimal tax = null;
         if (!dryRun) {
             try {
                 TossOrder order = toss.placeOrder(
                         TossOrderRequest.marketBuy(symbol, qty.toPlainString(), CURRENCY_KRW));
                 tossOrderId = order == null ? null : order.orderId();
                 filledPrice = actualFilledPrice(order, currentPrice);
+                commission = feeOf(order, TossOrder.Execution::commission);
+                tax = feeOf(order, TossOrder.Execution::tax);
             } catch (RuntimeException e) {
                 success = false;
                 message = truncate("주문 실패: " + e.getMessage());
@@ -91,7 +96,7 @@ public class RangeOrderExecutor {
         }
 
         saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, qty, filledPrice, tossOrderId, success,
-                compose(rationale, message));
+                compose(rationale, message), commission, tax);
         if (!success) {
             notify("⚠️ [레인지] " + symbol + " 매수 실패 — " + message);
             return false; // 재시도 안 함(#808과 동일 원칙)
@@ -126,12 +131,16 @@ public class RangeOrderExecutor {
         boolean success = true;
         String message = dryRun ? "드라이런 — 실주문 안 함" : "실주문 체결";
         BigDecimal filledPrice = currentPrice;
+        BigDecimal commission = null;
+        BigDecimal tax = null;
         if (!dryRun) {
             try {
                 TossOrder order = toss.placeOrder(TossOrderRequest.marketSell(position.getSymbol(),
                         position.getEntryQty().toPlainString(), CURRENCY_KRW));
                 tossOrderId = order == null ? null : order.orderId();
                 filledPrice = actualFilledPrice(order, currentPrice);
+                commission = feeOf(order, TossOrder.Execution::commission);
+                tax = feeOf(order, TossOrder.Execution::tax);
             } catch (RuntimeException e) {
                 success = false;
                 message = truncate("주문 실패: " + e.getMessage());
@@ -140,7 +149,7 @@ public class RangeOrderExecutor {
         }
 
         saveLogSafely(position.getSymbol(), "SELL", reason.name(), dryRun, position.getEntryQty(), filledPrice,
-                tossOrderId, success, compose(rationale, message));
+                tossOrderId, success, compose(rationale, message), commission, tax);
         if (!success) {
             notify("⚠️ [레인지] " + position.getSymbol() + " 매도 실패 — " + message);
             return false;
@@ -183,6 +192,22 @@ public class RangeOrderExecutor {
         }
     }
 
+    /** 체결응답의 commission/tax를 BigDecimal로(#841, 2026-10-07 — #808 OrderExecutor와 동일 수정). */
+    private static BigDecimal feeOf(TossOrder order, java.util.function.Function<TossOrder.Execution, String> field) {
+        if (order == null || order.execution() == null) {
+            return null;
+        }
+        String raw = field.apply(order.execution());
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(raw);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     /**
      * 감사로그 기록 실패가 실제 체결(포지션 기록)을 막으면 안 됨 — 2026-10-01 #808 실사례:
      * toss_order_id 컬럼 길이 초과(ORA-12899)로 saveLog 가 예외를 던져 실제로 체결된 매수가 포지션에
@@ -190,7 +215,8 @@ public class RangeOrderExecutor {
      * 레인지 트랙은 처음부터 이 분리를 반영한다 — 예외를 삼키고 ERROR 로그만, 호출측은 계속 진행.
      */
     private void saveLogSafely(String symbol, String side, String reason, boolean dryRun, BigDecimal qty,
-                               BigDecimal price, String tossOrderId, boolean success, String message) {
+                               BigDecimal price, String tossOrderId, boolean success, String message,
+                               BigDecimal commission, BigDecimal tax) {
         try {
             RangeTradeOrderLog entry = new RangeTradeOrderLog();
             entry.setSymbol(symbol);
@@ -202,6 +228,8 @@ public class RangeOrderExecutor {
             entry.setTossOrderId(tossOrderId);
             entry.setSuccess(success);
             entry.setMessage(message);
+            entry.setCommission(commission);
+            entry.setTax(tax);
             logMapper.insert(entry);
         } catch (RuntimeException e) {
             log.error("[레인지] 주문 감사로그 기록 실패(symbol={}, side={}, success={}) — 포지션 기록/흐름은 계속 진행: {}",

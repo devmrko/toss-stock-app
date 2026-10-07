@@ -83,3 +83,12 @@ EXCEPTION
     IF SQLCODE != -955 THEN RAISE; END IF;
 END;
 /
+
+-- 2026-10-07(#841) — #808과 동일한 수수료/세금 미기록 문제, 레인지 트랙도 같이 수정.
+BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE range_trade_order_log ADD (commission NUMBER, tax NUMBER)';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -1430 THEN RAISE; END IF; -- 이미 존재
+END;
+/

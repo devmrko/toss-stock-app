@@ -106,3 +106,13 @@ EXCEPTION
     IF SQLCODE != -904 THEN RAISE; END IF; -- 컬럼 없음(아직 테이블 자체가 새로 생성된 경우) 무시
 END;
 /
+
+-- 2026-10-07(#841) 실사고: 토스 주문응답의 commission/tax를 한 번도 저장 안 해서 DB 기준
+-- 실현손익이 실제(토스 앱 표시)보다 크게 낙관적(엠플러스 1종목만으로 -24,950 vs 실제 -154,463).
+BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE auto_trade_order_log ADD (commission NUMBER, tax NUMBER)';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -1430 THEN RAISE; END IF; -- 이미 존재
+END;
+/

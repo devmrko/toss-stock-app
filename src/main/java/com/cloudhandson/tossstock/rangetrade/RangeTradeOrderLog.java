@@ -18,6 +18,8 @@ public class RangeTradeOrderLog {
     private String tossOrderId;
     private boolean success;
     private String message;
+    private BigDecimal commission;
+    private BigDecimal tax;
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }
@@ -40,6 +42,10 @@ public class RangeTradeOrderLog {
     public void setSuccess(boolean success) { this.success = success; }
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
+    public BigDecimal getCommission() { return commission; }
+    public void setCommission(BigDecimal commission) { this.commission = commission; }
+    public BigDecimal getTax() { return tax; }
+    public void setTax(BigDecimal tax) { this.tax = tax; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

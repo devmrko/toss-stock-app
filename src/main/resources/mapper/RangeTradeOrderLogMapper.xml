@@ -6,10 +6,11 @@
     <insert id="insert" parameterType="com.cloudhandson.tossstock.rangetrade.RangeTradeOrderLog"
             useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
         INSERT INTO range_trade_order_log
-            (symbol, side, reason, dry_run, requested_qty, requested_price, toss_order_id, success, message, created_at)
+            (symbol, side, reason, dry_run, requested_qty, requested_price, toss_order_id, success, message,
+             commission, tax, created_at)
         VALUES
             (#{symbol}, #{side}, #{reason}, #{dryRun}, #{requestedQty}, #{requestedPrice},
-             #{tossOrderId}, #{success}, #{message}, CURRENT_TIMESTAMP)
+             #{tossOrderId}, #{success}, #{message}, #{commission}, #{tax}, CURRENT_TIMESTAMP)
     </insert>
 
 </mapper>
