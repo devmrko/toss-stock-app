@@ -54,7 +54,7 @@ class RangeTradeSchedulerTest {
         scheduler = new RangeTradeScheduler(props(true), stateMapper, positionMapper, dailyMapper,
                 priceCache, badNewsGate, earningsGate, orderExecutor, discord);
         when(dailyMapper.rangeStatsBatch(any(LocalDate.class), anyInt())).thenReturn(List.of());
-        when(positionMapper.findAll()).thenReturn(List.of()); // 서킷브레이커 평가손익 계산용 기본값
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845: 서킷브레이커 기본값
     }
 
     private RangeTradeState state(boolean tripped) {
@@ -150,12 +150,8 @@ class RangeTradeSchedulerTest {
         // 청산 포지션 손실만으로 -30%(기준 -15% 초과) → 이번 틱에서 트립되고 신규 스캔은 생략.
         when(stateMapper.find()).thenReturn(state(false));
         when(positionMapper.findHolding()).thenReturn(List.of());
-        RangeTradePosition exited = new RangeTradePosition();
-        exited.setStatus("EXITED");
-        exited.setEntryPrice(BigDecimal.valueOf(100_000));
-        exited.setEntryQty(BigDecimal.valueOf(10));
-        exited.setExitPrice(BigDecimal.valueOf(70_000)); // (70,000-100,000)*10 = -300,000 = 예산의 -30%
-        when(positionMapper.findAll()).thenReturn(List.of(exited));
+        // (70,000-100,000)*10 = -300,000 = 예산의 -30%(#845: realizedPnlTotal 스칼라로 직접 스텁)
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.valueOf(-300_000));
 
         scheduler.tick();
 
@@ -168,12 +164,8 @@ class RangeTradeSchedulerTest {
         when(stateMapper.find()).thenReturn(state(false));
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        RangeTradePosition exited = new RangeTradePosition();
-        exited.setStatus("EXITED");
-        exited.setEntryPrice(BigDecimal.valueOf(100_000));
-        exited.setEntryQty(BigDecimal.valueOf(10));
-        exited.setExitPrice(BigDecimal.valueOf(103_000)); // +30,000 = 예산의 +3%, 트립 기준 한참 못 미침
-        when(positionMapper.findAll()).thenReturn(List.of(exited));
+        // +30,000 = 예산의 +3%, 트립 기준 한참 못 미침(#845: realizedPnlTotal 스칼라로 직접 스텁)
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.valueOf(30_000));
 
         scheduler.tick();
 

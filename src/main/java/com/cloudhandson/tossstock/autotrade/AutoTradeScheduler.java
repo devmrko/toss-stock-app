@@ -139,16 +139,21 @@ public class AutoTradeScheduler {
         if (state.isCircuitBreakerTripped()) {
             return true;
         }
-        BigDecimal equity = state.getTotalBudget();
-        for (AutoTradePosition p : positionMapper.findAll()) {
-            BigDecimal qty = p.getEntryQty();
-            if ("EXITED".equals(p.getStatus())) {
-                equity = equity.add(p.getExitPrice().subtract(p.getEntryPrice()).multiply(qty));
-            } else {
+        // #845(2026-10-07): findAll()로 전체 이력(청산 포함)을 매 틱 Java로 재합산하던 것을
+        // realized는 DB SUM 1건(행 수 늘어나도 빠름)으로, unrealized는 보유 중인 적은 수만 조회.
+        BigDecimal realized = positionMapper.realizedPnlTotal();
+        BigDecimal equity = state.getTotalBudget().add(realized == null ? BigDecimal.ZERO : realized);
+        for (AutoTradePosition p : positionMapper.findHolding()) {
+            try {
                 BigDecimal current = currentPrice(p.getSymbol());
                 if (current != null) {
-                    equity = equity.add(current.subtract(p.getEntryPrice()).multiply(qty));
+                    equity = equity.add(current.subtract(p.getEntryPrice()).multiply(p.getEntryQty()));
                 }
+            } catch (RuntimeException e) {
+                // 원래 findAll() 시절부터 있던 잠재적 결함(개별 종목 시세조회 실패가 전체 틱을
+                // 죽임) — #845 리팩터링 중 발견해 같이 고침. 한 종목 실패가 서킷브레이커 판정
+                // 전체를 막으면 안 됨(§기존 tick()의 processHolding 격리 원칙과 동일).
+                log.warn("서킷브레이커 평가손익 계산 중 시세조회 실패(symbol={}): {}", p.getSymbol(), e.toString());
             }
         }
         boolean trip = CircuitBreaker.check(equity, state.getTotalBudget(), props.circuitBreakerPct());

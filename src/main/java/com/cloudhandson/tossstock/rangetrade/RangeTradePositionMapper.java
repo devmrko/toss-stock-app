@@ -23,4 +23,7 @@ public interface RangeTradePositionMapper {
                    @Param("exitReason") String exitReason, @Param("exitAt") LocalDateTime exitAt);
 
     int countHolding();
+
+    /** EXITED 포지션 전체의 realized 손익 합계(스칼라, #845) — #808과 동일 성능개선. 0건이면 0. */
+    BigDecimal realizedPnlTotal();
 }

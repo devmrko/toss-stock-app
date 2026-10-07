@@ -129,7 +129,7 @@ class AutoTradeSchedulerTest {
         when(stateMapper.find()).thenReturn(state());
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        when(positionMapper.findAll()).thenReturn(List.of());
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
         when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L)); // 시장 게이트 통과
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
@@ -212,7 +212,7 @@ class AutoTradeSchedulerTest {
         when(stateMapper.find()).thenReturn(state());
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        when(positionMapper.findAll()).thenReturn(List.of());
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
         when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
@@ -258,7 +258,7 @@ class AutoTradeSchedulerTest {
         when(stateMapper.find()).thenReturn(state());
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        when(positionMapper.findAll()).thenReturn(List.of());
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
         when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(positionMapper.lastStopExitAt(SYMBOL)).thenReturn(LocalDateTime.now().minusMinutes(31));
@@ -305,7 +305,7 @@ class AutoTradeSchedulerTest {
         when(stateMapper.find()).thenReturn(state());
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        when(positionMapper.findAll()).thenReturn(List.of());
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
         when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);

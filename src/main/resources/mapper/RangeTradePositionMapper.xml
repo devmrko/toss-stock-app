@@ -32,6 +32,11 @@
         SELECT COUNT(*) FROM range_trade_position WHERE status = 'HOLDING'
     </select>
 
+    <select id="realizedPnlTotal" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM((exit_price - entry_price) * entry_qty), 0)
+        FROM range_trade_position WHERE status = 'EXITED'
+    </select>
+
     <!-- Oracle IDENTITY 키 반환: keyColumn 명시 필수(미지정 시 ROWID 반환 → ORA-17132) -->
     <insert id="insert" parameterType="com.cloudhandson.tossstock.rangetrade.RangeTradePosition"
             useGeneratedKeys="true" keyProperty="id" keyColumn="ID">

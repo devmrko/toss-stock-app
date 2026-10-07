@@ -42,4 +42,11 @@ public interface AutoTradePositionMapper {
      * 활성 뉴스 테마 태그를 조회해 동일테마 재진입 판정(#840, 2026-10-07)에 쓴다.
      */
     AutoTradePosition findLastStopExited(@Param("symbol") String symbol);
+
+    /**
+     * EXITED 포지션 전체의 realized 손익 합계(스칼라, #845 2026-10-07) — checkCircuitBreaker가
+     * findAll()로 전체 이력을 Java로 끌어와 재합산하던 것을 DB SUM 1건으로 대체(행 수 늘어나도
+     * 빠름). 0건이면 0(NULL 아님).
+     */
+    BigDecimal realizedPnlTotal();
 }

@@ -137,16 +137,19 @@ public class RangeTradeScheduler {
         if (state.isCircuitBreakerTripped()) {
             return true;
         }
-        BigDecimal equity = state.getTotalBudget();
-        for (RangeTradePosition p : positionMapper.findAll()) {
-            BigDecimal qty = p.getEntryQty();
-            if ("EXITED".equals(p.getStatus())) {
-                equity = equity.add(p.getExitPrice().subtract(p.getEntryPrice()).multiply(qty));
-            } else {
+        // #845(2026-10-07): #808 AutoTradeScheduler와 동일 성능개선 — findAll() 대신
+        // realized는 DB SUM, unrealized는 보유 중인 적은 수(최대 2)만 조회.
+        BigDecimal realized = positionMapper.realizedPnlTotal();
+        BigDecimal equity = state.getTotalBudget().add(realized == null ? BigDecimal.ZERO : realized);
+        for (RangeTradePosition p : positionMapper.findHolding()) {
+            try {
                 BigDecimal current = livePrice(p.getSymbol());
                 if (current != null) {
-                    equity = equity.add(current.subtract(p.getEntryPrice()).multiply(qty));
+                    equity = equity.add(current.subtract(p.getEntryPrice()).multiply(p.getEntryQty()));
                 }
+            } catch (RuntimeException e) {
+                // #808과 동일 — 한 종목 시세조회 실패가 서킷브레이커 판정 전체를 막으면 안 됨.
+                log.warn("[레인지] 서킷브레이커 평가손익 계산 중 시세조회 실패(symbol={}): {}", p.getSymbol(), e.toString());
             }
         }
         boolean trip = CircuitBreaker.check(equity, state.getTotalBudget(), props.circuitBreakerPct());
