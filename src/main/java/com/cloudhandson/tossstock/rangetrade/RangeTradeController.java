@@ -60,14 +60,21 @@ public class RangeTradeController {
         return result;
     }
 
-    /** 총 매매건수/승패/누적손익/누적수수료(#849) — EXITED 포지션·성공 주문로그 기준(드라이런 포함). */
+    /**
+     * 총 매매건수/승패/누적손익/누적수수료(#849, 2026-10-08 정정) — EXITED 포지션·성공
+     * 주문로그 기준(드라이런 포함). {@code realizedPnl}은 가격차만, {@code netRealizedPnl}이
+     * 거기서 누적 수수료+세금을 뺀 값(#808 AutoTradeController와 동일 정정).
+     */
     private Map<String, Object> summary() {
+        BigDecimal priceOnlyPnl = positionMapper.realizedPnlTotal();
+        BigDecimal totalFees = orderLogMapper.totalFees();
         Map<String, Object> s = new HashMap<>();
         s.put("totalTrades", positionMapper.countExited());
         s.put("wins", positionMapper.countWin());
         s.put("losses", positionMapper.countLoss());
-        s.put("realizedPnl", positionMapper.realizedPnlTotal());
-        s.put("totalFees", orderLogMapper.totalFees());
+        s.put("realizedPnl", priceOnlyPnl);
+        s.put("totalFees", totalFees);
+        s.put("netRealizedPnl", priceOnlyPnl.subtract(totalFees));
         return s;
     }
 

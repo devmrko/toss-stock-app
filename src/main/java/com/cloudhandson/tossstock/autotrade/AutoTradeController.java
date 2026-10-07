@@ -88,14 +88,23 @@ public class AutoTradeController {
         return result;
     }
 
-    /** 총 매매건수/승패/누적손익/누적수수료(#849) — EXITED 포지션·성공 주문로그 기준(드라이런 포함). */
+    /**
+     * 총 매매건수/승패/누적손익/누적수수료(#849, 2026-10-08 정정) — EXITED 포지션·성공
+     * 주문로그 기준(드라이런 포함). {@code realizedPnl}은 가격차만(매수가-매도가), 토스 앱이
+     * 보여주는 실제 손익과는 다르다(수수료/세금 미반영) — {@code netRealizedPnl}이 거기서
+     * 누적 수수료+세금을 뺀 값. #847 배포 이전 거래는 fee 컬럼이 비어있어(0으로 집계) 이
+     * 보정이 아직 전부 반영되지 않음 — 신규 거래부터 정확해짐.
+     */
     private Map<String, Object> summary() {
+        BigDecimal priceOnlyPnl = positionMapper.realizedPnlTotal();
+        BigDecimal totalFees = orderLogMapper.totalFees();
         Map<String, Object> s = new HashMap<>();
         s.put("totalTrades", positionMapper.countExited());
         s.put("wins", positionMapper.countWin());
         s.put("losses", positionMapper.countLoss());
-        s.put("realizedPnl", positionMapper.realizedPnlTotal());
-        s.put("totalFees", orderLogMapper.totalFees());
+        s.put("realizedPnl", priceOnlyPnl);
+        s.put("totalFees", totalFees);
+        s.put("netRealizedPnl", priceOnlyPnl.subtract(totalFees));
         return s;
     }
 

@@ -125,6 +125,7 @@ class AutoTradeControllerTest {
         assertThat(summary.get("losses")).isEqualTo(5);
         assertThat(summary.get("realizedPnl")).isEqualTo(BigDecimal.valueOf(-24950));
         assertThat(summary.get("totalFees")).isEqualTo(BigDecimal.valueOf(3200));
+        assertThat(summary.get("netRealizedPnl")).isEqualTo(BigDecimal.valueOf(-28150));
     }
 
     @Test

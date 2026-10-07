@@ -103,6 +103,7 @@ class RangeTradeControllerTest {
         assertThat(summary.get("losses")).isEqualTo(1);
         assertThat(summary.get("realizedPnl")).isEqualTo(BigDecimal.valueOf(5000));
         assertThat(summary.get("totalFees")).isEqualTo(BigDecimal.valueOf(900));
+        assertThat(summary.get("netRealizedPnl")).isEqualTo(BigDecimal.valueOf(4100));
     }
 
     @Test

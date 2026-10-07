@@ -104,7 +104,8 @@
       el.innerHTML = `
         <div class="scard"><div class="lbl">총 매매</div><div class="val">${fmtNum(sm.totalTrades)}건</div></div>
         <div class="scard"><div class="lbl">승 / 패</div><div class="val"><span class="up">${fmtNum(sm.wins)}</span> / <span class="down">${fmtNum(sm.losses)}</span></div></div>
-        <div class="scard"><div class="lbl">누적 실현손익</div><div class="val ${pnlClass(sm.realizedPnl)}">${fmtNum(sm.realizedPnl)}원</div></div>
+        <div class="scard"><div class="lbl">누적 실현손익(수수료 반영)</div><div class="val ${pnlClass(sm.netRealizedPnl)}">${fmtNum(sm.netRealizedPnl)}원</div></div>
+        <div class="scard"><div class="lbl">↳ 가격차만(참고)</div><div class="val dimv">${fmtNum(sm.realizedPnl)}원</div></div>
         <div class="scard"><div class="lbl">누적 수수료+세금</div><div class="val dimv">${fmtNum(sm.totalFees)}원</div></div>`;
     }
 
