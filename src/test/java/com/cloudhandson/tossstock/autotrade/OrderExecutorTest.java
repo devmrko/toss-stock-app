@@ -221,4 +221,66 @@ class OrderExecutorTest {
 
         verify(logMapper).insert(argThat(e -> e.getMessage().length() == 500));
     }
+
+    private OrderExecutor liveExecutor() {
+        AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 8.0,
+                new AutoTradeProperties.Gate(35));
+        when(stateMapper.find()).thenReturn(stateWith(false));
+        return new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
+    }
+
+    private static TossOrder order(String status, String avgFilledPrice) {
+        TossOrder.Execution exec = new TossOrder.Execution("20", avgFilledPrice, "1000000", "150", "0", null, null);
+        return new TossOrder("ORD1", "005930", "BUY", "MARKET", status, null, "20", "1000000", "KRW", null, null, exec);
+    }
+
+    @Test
+    void 즉시_FILLED면_재조회_안_함() {
+        OrderExecutor live = liveExecutor();
+        when(toss.placeOrder(any())).thenReturn(order("FILLED", "50000"));
+
+        live.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
+
+        verify(toss, never()).getOrder(any());
+        verify(logMapper).insert(argThat(e -> e.getRequestedPrice().compareTo(BigDecimal.valueOf(50000)) == 0));
+    }
+
+    @Test
+    void PENDING에서_FILLED로_바뀌면_재조회된_체결가를_쓴다() {
+        OrderExecutor live = liveExecutor();
+        when(toss.placeOrder(any())).thenReturn(order("PENDING", "50000"));
+        when(toss.getOrder("ORD1")).thenReturn(order("FILLED", "50450"));
+
+        live.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
+
+        verify(toss, times(1)).getOrder("ORD1");
+        verify(logMapper).insert(argThat(e -> e.getRequestedPrice().compareTo(BigDecimal.valueOf(50450)) == 0));
+    }
+
+    @Test
+    void 재시도_소진후에도_미확정이면_마지막_값으로_진행() {
+        OrderExecutor live = liveExecutor();
+        when(toss.placeOrder(any())).thenReturn(order("PENDING", "50000"));
+        when(toss.getOrder("ORD1")).thenReturn(order("PENDING", "50100"));
+
+        boolean ok = live.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
+
+        assertThat(ok).isTrue(); // 재시도 소진은 에러가 아님(§9)
+        verify(toss, times(4)).getOrder("ORD1");
+        verify(logMapper).insert(argThat(e -> e.getRequestedPrice().compareTo(BigDecimal.valueOf(50100)) == 0));
+    }
+
+    @Test
+    void 재조회_예외는_거래_흐름을_막지_않는다() {
+        OrderExecutor live = liveExecutor();
+        when(toss.placeOrder(any())).thenReturn(order("PENDING", "50000"));
+        when(toss.getOrder("ORD1")).thenThrow(new RuntimeException("HTTP 429"));
+
+        boolean ok = live.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
+
+        assertThat(ok).isTrue();
+        verify(toss, times(1)).getOrder("ORD1"); // 예외 즉시 루프 중단, 재시도 소진까지 안 감
+        verify(logMapper).insert(argThat(e -> e.getRequestedPrice().compareTo(BigDecimal.valueOf(50000)) == 0));
+    }
 }

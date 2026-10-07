@@ -65,8 +65,12 @@ class RangeOrderExecutorTest {
     }
 
     private static TossOrder filledOrder() {
-        TossOrder.Execution exec = new TossOrder.Execution("5", "105000", "525000", "0", "0", null, null);
-        return new TossOrder("ORD1", "005930", "BUY", "MARKET", "FILLED", null, "5", "525000", "KRW",
+        return order("FILLED", "105000");
+    }
+
+    private static TossOrder order(String status, String avgFilledPrice) {
+        TossOrder.Execution exec = new TossOrder.Execution("5", avgFilledPrice, "525000", "0", "0", null, null);
+        return new TossOrder("ORD1", "005930", "BUY", "MARKET", status, null, "5", "525000", "KRW",
                 null, null, exec);
     }
 
@@ -234,6 +238,55 @@ class RangeOrderExecutorTest {
         dryRunExecutor.buy("005930", BUDGET, PRICE, BAND_LOW, BAND_HIGH, "가".repeat(600));
 
         verify(logMapper).insert(argThat(e -> e.getMessage().length() == 500));
+    }
+
+    @Test
+    void 즉시_FILLED면_재조회_안_함() {
+        when(stateMapper.find()).thenReturn(stateWith(false));
+        when(toss.placeOrder(any())).thenReturn(order("FILLED", "105000"));
+
+        executor(props(false)).buy("005930", BUDGET, PRICE, BAND_LOW, BAND_HIGH, RATIONALE);
+
+        verify(toss, never()).getOrder(any());
+        verify(logMapper).insert(argThat(e -> e.getRequestedPrice().compareTo(BigDecimal.valueOf(105000)) == 0));
+    }
+
+    @Test
+    void PENDING에서_FILLED로_바뀌면_재조회된_체결가를_쓴다() {
+        when(stateMapper.find()).thenReturn(stateWith(false));
+        when(toss.placeOrder(any())).thenReturn(order("PENDING", "105000"));
+        when(toss.getOrder("ORD1")).thenReturn(order("FILLED", "106200"));
+
+        executor(props(false)).buy("005930", BUDGET, PRICE, BAND_LOW, BAND_HIGH, RATIONALE);
+
+        verify(toss, times(1)).getOrder("ORD1");
+        verify(logMapper).insert(argThat(e -> e.getRequestedPrice().compareTo(BigDecimal.valueOf(106200)) == 0));
+    }
+
+    @Test
+    void 재시도_소진후에도_미확정이면_마지막_값으로_진행() {
+        when(stateMapper.find()).thenReturn(stateWith(false));
+        when(toss.placeOrder(any())).thenReturn(order("PENDING", "105000"));
+        when(toss.getOrder("ORD1")).thenReturn(order("PENDING", "105500"));
+
+        boolean ok = executor(props(false)).buy("005930", BUDGET, PRICE, BAND_LOW, BAND_HIGH, RATIONALE);
+
+        assertThat(ok).isTrue();
+        verify(toss, times(4)).getOrder("ORD1");
+        verify(logMapper).insert(argThat(e -> e.getRequestedPrice().compareTo(BigDecimal.valueOf(105500)) == 0));
+    }
+
+    @Test
+    void 재조회_예외는_거래_흐름을_막지_않는다() {
+        when(stateMapper.find()).thenReturn(stateWith(false));
+        when(toss.placeOrder(any())).thenReturn(order("PENDING", "105000"));
+        when(toss.getOrder("ORD1")).thenThrow(new RuntimeException("HTTP 429"));
+
+        boolean ok = executor(props(false)).buy("005930", BUDGET, PRICE, BAND_LOW, BAND_HIGH, RATIONALE);
+
+        assertThat(ok).isTrue();
+        verify(toss, times(1)).getOrder("ORD1");
+        verify(logMapper).insert(argThat(e -> e.getRequestedPrice().compareTo(BigDecimal.valueOf(105000)) == 0));
     }
 
     private RangeTradePosition livePosition() {

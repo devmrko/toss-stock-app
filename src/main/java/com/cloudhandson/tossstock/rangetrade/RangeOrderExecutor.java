@@ -28,6 +28,10 @@ public class RangeOrderExecutor {
     private static final String MARKET_KR = "KR";
     private static final String CURRENCY_KRW = "KRW";
 
+    /** #850(#808과 동일): 체결 확정 대기 — 최대 횟수·간격. */
+    private static final int MAX_FILL_POLL_ATTEMPTS = 4;
+    private static final long FILL_POLL_DELAY_MS = 300;
+
     private final RangeTradeProperties props;
     private final RangeTradeStateMapper stateMapper;
     private final RangeTradePositionMapper positionMapper;
@@ -83,6 +87,7 @@ public class RangeOrderExecutor {
             try {
                 TossOrder order = toss.placeOrder(
                         TossOrderRequest.marketBuy(symbol, qty.toPlainString(), CURRENCY_KRW));
+                order = waitForFill(order);
                 tossOrderId = order == null ? null : order.orderId();
                 filledPrice = actualFilledPrice(order, currentPrice);
             } catch (RuntimeException e) {
@@ -140,6 +145,7 @@ public class RangeOrderExecutor {
             try {
                 TossOrder order = toss.placeOrder(TossOrderRequest.marketSell(position.getSymbol(),
                         position.getEntryQty().toPlainString(), CURRENCY_KRW));
+                order = waitForFill(order);
                 tossOrderId = order == null ? null : order.orderId();
                 filledPrice = actualFilledPrice(order, currentPrice);
             } catch (RuntimeException e) {
@@ -187,6 +193,47 @@ public class RangeOrderExecutor {
     /** message 컬럼이 VARCHAR2(500)이라 Toss 응답 본문까지 담은 예외 메시지가 넘칠 수 있어 방어적으로 자름. */
     private static String truncate(String s) {
         return s.length() > 500 ? s.substring(0, 500) : s;
+    }
+
+    /**
+     * placeOrder() 즉시 응답이 아직 진행 중 상태(PENDING/PARTIAL_FILLED 등)면 짧게 재조회해
+     * 확정된 체결가를 기다린다(#850, #808 OrderExecutor와 동일). 재조회 실패/소진은 에러가
+     * 아님 — 가진 값으로 계속 진행.
+     */
+    private TossOrder waitForFill(TossOrder initial) {
+        if (initial == null) {
+            return null;
+        }
+        TossOrder current = initial;
+        int attempts = 0;
+        while (isStillInFlight(current.status()) && attempts < MAX_FILL_POLL_ATTEMPTS) {
+            sleep(FILL_POLL_DELAY_MS);
+            try {
+                TossOrder refreshed = toss.getOrder(current.orderId());
+                if (refreshed != null) {
+                    current = refreshed;
+                }
+            } catch (RuntimeException e) {
+                log.warn("[레인지] 체결 확인 재조회 실패(orderId={}): {}", current.orderId(), e.toString());
+                break;
+            }
+            attempts++;
+        }
+        return current;
+    }
+
+    /** 토스 주문 상태 중 아직 종결되지 않은("OPEN 그룹") 값 — 그 외(FILLED 등)는 더 기다릴 이유 없음. */
+    private static boolean isStillInFlight(String status) {
+        return "PENDING".equals(status) || "PARTIAL_FILLED".equals(status)
+                || "PENDING_CANCEL".equals(status) || "PENDING_REPLACE".equals(status);
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** 실주문 체결가(execution.averageFilledPrice) 사용, 없으면 견적가로 폴백. */

@@ -134,16 +134,29 @@
           </tr>`).join('')}</tbody>`;
     }
 
+    /** SELL+성공+entryPrice 있음일 때만 실현손익 계산 가능(#850 이후 신규 거래부터 entryPrice가 채워짐). */
+    function realizedPnl(r) {
+      if (r.side !== 'SELL' || !r.success || r.entryPrice === null || r.entryPrice === undefined
+          || r.requestedPrice === null || r.requestedPrice === undefined
+          || r.requestedQty === null || r.requestedQty === undefined) {
+        return null;
+      }
+      const priceDiff = (r.requestedPrice - r.entryPrice) * r.requestedQty;
+      return priceDiff - (r.commission || 0) - (r.tax || 0);
+    }
+
     function renderLogs(table, rows, names) {
       if (!rows || rows.length === 0) {
-        table.innerHTML = '<tbody><tr><td class="empty" colspan="9">주문로그 없음</td></tr></tbody>';
+        table.innerHTML = '<tbody><tr><td class="empty" colspan="10">주문로그 없음</td></tr></tbody>';
         return;
       }
       table.innerHTML = `
         <thead><tr>
-          <th>종목</th><th>구분</th><th>진입가</th><th>체결가</th><th>피크가</th><th>수수료</th><th>세금</th><th>이유</th><th>시각</th>
+          <th>종목</th><th>구분</th><th>진입가</th><th>체결가</th><th>피크가</th><th>수수료</th><th>세금</th><th>실현손익</th><th>이유</th><th>시각</th>
         </tr></thead>
-        <tbody>${rows.map(r => `
+        <tbody>${rows.map(r => {
+          const pnl = realizedPnl(r);
+          return `
           <tr>
             <td>${(names[r.symbol] || r.symbol)}<span class="dimv"> ${r.symbol}</span>${r.dryRun ? '<span class="tag dry">드라이런</span>' : ''}${r.success ? '' : '<span class="tag fail">실패</span>'}</td>
             <td><span class="sidetag ${r.side}">${r.side}</span></td>
@@ -152,9 +165,11 @@
             <td class="num dimv">${fmtNum(r.peakPrice)}</td>
             <td class="num dimv">${fmtNum(r.commission)}</td>
             <td class="num dimv">${fmtNum(r.tax)}</td>
+            <td class="num ${pnlClass(pnl)}">${fmtNum(pnl)}</td>
             <td class="reason">${r.message || '-'}</td>
             <td class="dimv">${fmtDt(r.createdAt)}</td>
-          </tr>`).join('')}</tbody>`;
+          </tr>`;
+        }).join('')}</tbody>`;
     }
 
     function renderPager(el, prefix, page, size, totalElements) {
