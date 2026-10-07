@@ -17,6 +17,8 @@ public class AutoTradeOrderLog {
     private String message;
     private BigDecimal commission;
     private BigDecimal tax;
+    private BigDecimal entryPrice;
+    private BigDecimal peakPrice;
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }
@@ -43,6 +45,10 @@ public class AutoTradeOrderLog {
     public void setCommission(BigDecimal commission) { this.commission = commission; }
     public BigDecimal getTax() { return tax; }
     public void setTax(BigDecimal tax) { this.tax = tax; }
+    public BigDecimal getEntryPrice() { return entryPrice; }
+    public void setEntryPrice(BigDecimal entryPrice) { this.entryPrice = entryPrice; }
+    public BigDecimal getPeakPrice() { return peakPrice; }
+    public void setPeakPrice(BigDecimal peakPrice) { this.peakPrice = peakPrice; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

@@ -23,11 +23,16 @@
     .badge.live { background:#2b1d1d; color:#ff8787; } .badge.dry { background:#1d2b33; color:#74c0fc; }
     .badge.cb-ok { background:#1d2b1d; color:#69db7c; } .badge.cb-tripped { background:#2b1d1d; color:#ff6b6b; }
     .badge.budget { background:#252a31; color:#aeb4bb; }
+    .summary { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+    .scard { background:var(--th); border-radius:10px; padding:8px 14px; min-width:92px; }
+    .scard .lbl { font-size:11px; color:var(--muted); margin-bottom:2px; }
+    .scard .val { font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; }
     table { width:100%; border-collapse:collapse; margin-bottom:10px; }
     th,td { padding:8px 10px; text-align:right; border-bottom:1px solid var(--line); font-size:13px; }
     th { background:var(--th); color:#aeb4bb; font-weight:600; font-size:11px; }
     th:nth-child(1),td:nth-child(1){ text-align:left; }
     td.num { font-variant-numeric:tabular-nums; }
+    td.reason { text-align:left; max-width:360px; white-space:normal; word-break:break-word; color:#c1c6cc; font-size:12px; }
     .up{color:var(--up);} .down{color:var(--down);} .flat{color:var(--muted);}
     .dimv{color:#6f757c;}
     .tag{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;margin-left:5px;}
@@ -36,6 +41,10 @@
     .sidetag.BUY{background:#2b1d1d;color:#ff6b6b;} .sidetag.SELL{background:#16384f;color:#74c0fc;}
     .empty{text-align:center;color:var(--muted);padding:24px;font-size:13px;}
     .tblwrap{overflow-x:auto;}
+    .pager{display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-bottom:16px;font-size:12px;color:var(--muted);}
+    .pager button{background:var(--th);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;}
+    .pager button:disabled{opacity:.4;cursor:default;}
+    .pager button:not(:disabled):hover{background:#2a2f37;}
   </style>
 </head>
 <body>
@@ -48,25 +57,29 @@
   </nav>
   <header>
     <h1>🤖 자동매매 현황</h1>
-    <span class="sub">#808 모멘텀 · #818 레인지 스윙 · 읽기전용 · 5초 갱신</span>
+    <span class="sub">#808 모멘텀 · #818 레인지 스윙 · 읽기전용 · 보유종목 5초 갱신</span>
   </header>
   <div class="wrap">
     <section class="engine" id="momentum">
       <h2>#808 모멘텀 엔진</h2>
       <div class="badges" id="momentum-badges"></div>
+      <div class="summary" id="momentum-summary"></div>
       <h3 style="font-size:13px;color:var(--muted);margin:0 0 6px;">보유종목</h3>
       <div class="tblwrap"><table id="momentum-holdings"><thead></thead><tbody></tbody></table></div>
-      <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;">최근 주문로그</h3>
+      <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;">총 매매(시간순)</h3>
       <div class="tblwrap"><table id="momentum-logs"><thead></thead><tbody></tbody></table></div>
+      <div class="pager" id="momentum-pager"></div>
     </section>
 
     <section class="engine" id="range">
       <h2>#818 레인지 스윙매매</h2>
       <div class="badges" id="range-badges"></div>
+      <div class="summary" id="range-summary"></div>
       <h3 style="font-size:13px;color:var(--muted);margin:0 0 6px;">보유종목</h3>
       <div class="tblwrap"><table id="range-holdings"><thead></thead><tbody></tbody></table></div>
-      <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;">최근 주문로그</h3>
+      <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;">총 매매(시간순)</h3>
       <div class="tblwrap"><table id="range-logs"><thead></thead><tbody></tbody></table></div>
+      <div class="pager" id="range-pager"></div>
     </section>
   </div>
 
@@ -76,6 +89,9 @@
     const fmtDt = (v) => v ? v.replace('T', ' ').slice(0, 19) : '-';
     const pnlClass = (v) => v === null || v === undefined ? 'flat' : (v > 0 ? 'up' : (v < 0 ? 'down' : 'flat'));
 
+    const pageState = { momentum: 0, range: 0 };
+    const PAGE_SIZE = 20;
+
     function renderBadges(el, s) {
       el.innerHTML = `
         <span class="badge ${s.dryRun ? 'dry' : 'live'}">${s.dryRun ? '🧪 드라이런' : '🔴 실거래'}</span>
@@ -83,71 +99,112 @@
         <span class="badge budget">예산 ${fmtNum(s.totalBudget)}원 · 보유 ${s.holdingCount}건</span>`;
     }
 
-    function renderHoldings(table, rows) {
+    function renderSummary(el, sm) {
+      if (!sm) { el.innerHTML = ''; return; }
+      el.innerHTML = `
+        <div class="scard"><div class="lbl">총 매매</div><div class="val">${fmtNum(sm.totalTrades)}건</div></div>
+        <div class="scard"><div class="lbl">승 / 패</div><div class="val"><span class="up">${fmtNum(sm.wins)}</span> / <span class="down">${fmtNum(sm.losses)}</span></div></div>
+        <div class="scard"><div class="lbl">누적 실현손익</div><div class="val ${pnlClass(sm.realizedPnl)}">${fmtNum(sm.realizedPnl)}원</div></div>
+        <div class="scard"><div class="lbl">누적 수수료+세금</div><div class="val dimv">${fmtNum(sm.totalFees)}원</div></div>`;
+    }
+
+    function renderHoldings(table, rows, showReason) {
       if (!rows || rows.length === 0) {
-        table.innerHTML = '<tbody><tr><td class="empty" colspan="8">보유종목 없음</td></tr></tbody>';
+        table.innerHTML = '<tbody><tr><td class="empty" colspan="9">보유종목 없음</td></tr></tbody>';
         return;
       }
+      const reasonCols = showReason ? '<th>매수이유</th>' : '';
       table.innerHTML = `
         <thead><tr>
-          <th>종목</th><th>시장</th><th>매수가</th><th>수량</th><th>현재가</th><th>변동률</th><th>평가손익</th><th>진입시각</th>
+          <th>종목</th><th>시장</th><th>매수가</th><th>피크가</th><th>수량</th><th>현재가</th><th>변동률</th><th>평가손익</th><th>진입시각</th>${reasonCols}
         </tr></thead>
         <tbody>${rows.map(r => `
           <tr>
             <td>${r.name || r.symbol}<span class="dimv"> ${r.symbol}</span>${r.dryRun ? '<span class="tag dry">드라이런</span>' : ''}</td>
             <td>${r.market}</td>
             <td class="num">${fmtNum(r.entryPrice)}</td>
+            <td class="num dimv">${fmtNum(r.peakPrice)}</td>
             <td class="num">${fmtNum(r.entryQty)}</td>
             <td class="num">${fmtNum(r.currentPrice)}</td>
             <td class="num ${pnlClass(r.priceChangePct)}">${fmtPct(r.priceChangePct)}</td>
             <td class="num ${pnlClass(r.unrealizedPnl)}">${fmtNum(r.unrealizedPnl)}</td>
             <td class="dimv">${fmtDt(r.entryAt)}</td>
+            ${showReason ? `<td class="reason">${r.buyReason || '-'}</td>` : ''}
           </tr>`).join('')}</tbody>`;
     }
 
     function renderLogs(table, rows, names) {
       if (!rows || rows.length === 0) {
-        table.innerHTML = '<tbody><tr><td class="empty" colspan="8">최근 주문로그 없음</td></tr></tbody>';
+        table.innerHTML = '<tbody><tr><td class="empty" colspan="9">주문로그 없음</td></tr></tbody>';
         return;
       }
       table.innerHTML = `
         <thead><tr>
-          <th>종목</th><th>구분</th><th>사유</th><th>수량</th><th>가격</th><th>수수료</th><th>세금</th><th>시각</th>
+          <th>종목</th><th>구분</th><th>진입가</th><th>체결가</th><th>피크가</th><th>수수료</th><th>세금</th><th>이유</th><th>시각</th>
         </tr></thead>
         <tbody>${rows.map(r => `
           <tr>
             <td>${(names[r.symbol] || r.symbol)}<span class="dimv"> ${r.symbol}</span>${r.dryRun ? '<span class="tag dry">드라이런</span>' : ''}${r.success ? '' : '<span class="tag fail">실패</span>'}</td>
             <td><span class="sidetag ${r.side}">${r.side}</span></td>
-            <td class="dimv">${r.reason || '-'}</td>
-            <td class="num">${fmtNum(r.requestedQty)}</td>
+            <td class="num dimv">${fmtNum(r.entryPrice)}</td>
             <td class="num">${fmtNum(r.requestedPrice)}</td>
+            <td class="num dimv">${fmtNum(r.peakPrice)}</td>
             <td class="num dimv">${fmtNum(r.commission)}</td>
             <td class="num dimv">${fmtNum(r.tax)}</td>
+            <td class="reason">${r.message || '-'}</td>
             <td class="dimv">${fmtDt(r.createdAt)}</td>
           </tr>`).join('')}</tbody>`;
     }
 
-    async function loadEngine(prefix, url) {
+    function renderPager(el, prefix, page, size, totalElements) {
+      const totalPages = Math.max(1, Math.ceil(totalElements / size));
+      el.innerHTML = `
+        <span>${totalElements}건 중 ${page * size + 1}~${Math.min((page + 1) * size, totalElements)} · ${page + 1}/${totalPages}페이지</span>
+        <button ${page <= 0 ? 'disabled' : ''} data-prefix="${prefix}" data-dir="-1">◀ 이전</button>
+        <button ${page + 1 >= totalPages ? 'disabled' : ''} data-prefix="${prefix}" data-dir="1">다음 ▶</button>`;
+      el.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
+        pageState[prefix] += Number(btn.dataset.dir);
+        loadOrderLog(prefix);
+      }));
+    }
+
+    async function loadOrderLog(prefix) {
+      const url = `/api/${prefix === 'momentum' ? 'autotrade' : 'rangetrade'}/orderlog?page=${pageState[prefix]}&size=${PAGE_SIZE}`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const p = await res.json();
+        renderLogs(document.getElementById(prefix + '-logs'), p.content, p.symbolNames || {});
+        renderPager(document.getElementById(prefix + '-pager'), prefix, p.page, p.size, p.totalElements);
+      } catch (e) {
+        document.getElementById(prefix + '-logs').innerHTML =
+          '<tbody><tr><td class="empty">주문로그 조회 실패: ' + e.message + '</td></tr></tbody>';
+      }
+    }
+
+    async function loadStatus(prefix, url, showReason) {
       try {
         const res = await fetch(url);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const s = await res.json();
         renderBadges(document.getElementById(prefix + '-badges'), s);
-        renderHoldings(document.getElementById(prefix + '-holdings'), s.holdingsView);
-        renderLogs(document.getElementById(prefix + '-logs'), s.recentLogs, s.symbolNames || {});
+        renderSummary(document.getElementById(prefix + '-summary'), s.summary);
+        renderHoldings(document.getElementById(prefix + '-holdings'), s.holdingsView, showReason);
       } catch (e) {
         document.getElementById(prefix + '-badges').innerHTML =
           '<span class="badge cb-tripped">⚠️ 조회 실패: ' + e.message + '</span>';
       }
     }
 
-    function loadAll() {
-      loadEngine('momentum', '/api/autotrade/status');
-      loadEngine('range', '/api/rangetrade/status');
+    function loadAllStatus() {
+      loadStatus('momentum', '/api/autotrade/status', true);
+      loadStatus('range', '/api/rangetrade/status', false);
     }
 
-    loadAll();
-    setInterval(loadAll, 5000);
+    loadAllStatus();
+    loadOrderLog('momentum');
+    loadOrderLog('range');
+    setInterval(loadAllStatus, 5000);
   </script>
 </body>
 </html>

@@ -6,6 +6,7 @@ import com.cloudhandson.tossstock.toss.dto.TossPrice;
 import com.cloudhandson.tossstock.toss.dto.TossStock;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
@@ -14,12 +15,12 @@ import java.util.List;
 import java.util.Map;
 
 /** 운영 확인용 얇은 어댑터(레인지 엔진, #808 {@code AutoTradeController}와 동일 패턴).
- * 설계: docs/design/848-autotrade-dashboard/README.md */
+ * 설계: docs/design/848-autotrade-dashboard/README.md, docs/design/849-dashboard-detail-and-summary/README.md */
 @RestController
 @RequestMapping("/api/rangetrade")
 public class RangeTradeController {
 
-    private static final int RECENT_LOG_LIMIT = 20;
+    private static final int DEFAULT_PAGE_SIZE = 20;
 
     private final RangeTradeStateMapper stateMapper;
     private final RangeTradePositionMapper positionMapper;
@@ -41,14 +42,10 @@ public class RangeTradeController {
     public Map<String, Object> status() {
         RangeTradeState state = stateMapper.find();
         List<RangeTradePosition> holdings = positionMapper.findHolding();
-        List<RangeTradeOrderLog> recentLogs = orderLogMapper.findRecent(RECENT_LOG_LIMIT);
 
-        List<String> allSymbols = java.util.stream.Stream.concat(
-                        holdings.stream().map(RangeTradePosition::getSymbol),
-                        recentLogs.stream().map(RangeTradeOrderLog::getSymbol))
-                .distinct().toList();
+        List<String> symbols = holdings.stream().map(RangeTradePosition::getSymbol).distinct().toList();
         Map<String, String> nameBySymbol = new HashMap<>();
-        for (TossStock s : safeStockInfo(allSymbols)) {
+        for (TossStock s : safeStockInfo(symbols)) {
             nameBySymbol.put(s.symbol(), s.name());
         }
 
@@ -58,7 +55,40 @@ public class RangeTradeController {
         result.put("totalBudget", state == null ? null : state.getTotalBudget());
         result.put("holdingCount", holdings.size());
         result.put("holdingsView", holdingsView(holdings, nameBySymbol));
-        result.put("recentLogs", recentLogs);
+        result.put("symbolNames", nameBySymbol);
+        result.put("summary", summary());
+        return result;
+    }
+
+    /** 총 매매건수/승패/누적손익/누적수수료(#849) — EXITED 포지션·성공 주문로그 기준(드라이런 포함). */
+    private Map<String, Object> summary() {
+        Map<String, Object> s = new HashMap<>();
+        s.put("totalTrades", positionMapper.countExited());
+        s.put("wins", positionMapper.countWin());
+        s.put("losses", positionMapper.countLoss());
+        s.put("realizedPnl", positionMapper.realizedPnlTotal());
+        s.put("totalFees", orderLogMapper.totalFees());
+        return s;
+    }
+
+    /** 주문로그 전체 이력 페이지(시간순 최신→과거, #849) — 고정 20건이던 /status.recentLogs 대체. */
+    @GetMapping("/orderlog")
+    public Map<String, Object> orderlog(@RequestParam(defaultValue = "0") int page,
+                                         @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
+        int safeSize = size <= 0 ? DEFAULT_PAGE_SIZE : size;
+        int safePage = Math.max(page, 0);
+        List<RangeTradeOrderLog> content = orderLogMapper.findPage(safePage * safeSize, safeSize);
+        List<String> symbols = content.stream().map(RangeTradeOrderLog::getSymbol).distinct().toList();
+        Map<String, String> nameBySymbol = new HashMap<>();
+        for (TossStock s : safeStockInfo(symbols)) {
+            nameBySymbol.put(s.symbol(), s.name());
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("content", content);
+        result.put("page", safePage);
+        result.put("size", safeSize);
+        result.put("totalElements", orderLogMapper.countAll());
         result.put("symbolNames", nameBySymbol);
         return result;
     }

@@ -10,10 +10,14 @@ import java.time.LocalDateTime;
  */
 public record HoldingPnlView(String symbol, String name, String market, BigDecimal entryPrice, BigDecimal entryQty,
                               BigDecimal currentPrice, BigDecimal unrealizedPnl, Double priceChangePct,
-                              boolean dryRun, LocalDateTime entryAt) {
+                              boolean dryRun, LocalDateTime entryAt, String buyReason, BigDecimal peakPrice) {
 
-    /** @param name 종목명(조회 실패/미보유 시 null — 화면에서 코드만 표시) */
-    public static HoldingPnlView of(AutoTradePosition p, BigDecimal currentPrice, String name) {
+    /**
+     * @param name      종목명(조회 실패/미보유 시 null — 화면에서 코드만 표시)
+     * @param buyReason 매수 당시 결정근거 전문(#832 rationale, 호재 문구 포함) — 과거 주문로그에서
+     *                   역추적(#849). 못 찾으면 null(추측 금지, "-"로 표시).
+     */
+    public static HoldingPnlView of(AutoTradePosition p, BigDecimal currentPrice, String name, String buyReason) {
         BigDecimal unrealizedPnl = null;
         Double priceChangePct = null;
         if (currentPrice != null) {
@@ -22,6 +26,7 @@ public record HoldingPnlView(String symbol, String name, String market, BigDecim
                     .divide(p.getEntryPrice(), MathContext.DECIMAL64).doubleValue() * 100;
         }
         return new HoldingPnlView(p.getSymbol(), name, p.getMarket(), p.getEntryPrice(), p.getEntryQty(),
-                currentPrice, unrealizedPnl, priceChangePct, p.isDryRun(), p.getEntryAt());
+                currentPrice, unrealizedPnl, priceChangePct, p.isDryRun(), p.getEntryAt(), buyReason,
+                p.getPeakPrice());
     }
 }

@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
-/** #848 — status()가 보유종목(현재가 포함)/최근로그를 포함해 반환하는지 검증(#808 동일 테스트 복제). */
+/** #848/#849 — status()가 보유종목(현재가 포함)/요약을, orderlog()가 페이지네이션을 반환하는지 검증. */
 class RangeTradeControllerTest {
 
     private RangeTradeStateMapper stateMapper;
@@ -34,6 +34,11 @@ class RangeTradeControllerTest {
         priceCache = mock(PriceCache.class);
         stockInfoCache = mock(StockInfoCache.class);
         when(stockInfoCache.get(anyList())).thenReturn(List.of());
+        when(positionMapper.countExited()).thenReturn(0);
+        when(positionMapper.countWin()).thenReturn(0);
+        when(positionMapper.countLoss()).thenReturn(0);
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO);
+        when(orderLogMapper.totalFees()).thenReturn(BigDecimal.ZERO);
         controller = new RangeTradeController(stateMapper, positionMapper, orderLogMapper, priceCache, stockInfoCache);
     }
 
@@ -50,7 +55,6 @@ class RangeTradeControllerTest {
                 .thenReturn(List.of(new TossPrice("001540", "9800", "KRW", null)));
         when(stockInfoCache.get(List.of("001540")))
                 .thenReturn(List.of(new TossStock("001540", "안국약품", "Ahnkook Pharmaceutical", "KR", null, null, null, "KRW")));
-        when(orderLogMapper.findRecent(20)).thenReturn(List.of());
 
         Map<String, Object> result = controller.status();
 
@@ -72,7 +76,6 @@ class RangeTradeControllerTest {
         position.setEntryAt(LocalDateTime.now());
         when(positionMapper.findHolding()).thenReturn(List.of(position));
         when(priceCache.get(anyList())).thenThrow(new RuntimeException("HTTP 429"));
-        when(orderLogMapper.findRecent(20)).thenReturn(List.of());
 
         Map<String, Object> result = controller.status();
 
@@ -80,5 +83,43 @@ class RangeTradeControllerTest {
         List<RangeHoldingPnlView> holdingsView = (List<RangeHoldingPnlView>) result.get("holdingsView");
         assertThat(holdingsView).hasSize(1);
         assertThat(holdingsView.get(0).currentPrice()).isNull();
+    }
+
+    @Test
+    void 요약에_매매건수_승패_실현손익_수수료가_포함된다() {
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countExited()).thenReturn(4);
+        when(positionMapper.countWin()).thenReturn(3);
+        when(positionMapper.countLoss()).thenReturn(1);
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.valueOf(5000));
+        when(orderLogMapper.totalFees()).thenReturn(BigDecimal.valueOf(900));
+
+        Map<String, Object> result = controller.status();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) result.get("summary");
+        assertThat(summary.get("totalTrades")).isEqualTo(4);
+        assertThat(summary.get("wins")).isEqualTo(3);
+        assertThat(summary.get("losses")).isEqualTo(1);
+        assertThat(summary.get("realizedPnl")).isEqualTo(BigDecimal.valueOf(5000));
+        assertThat(summary.get("totalFees")).isEqualTo(BigDecimal.valueOf(900));
+    }
+
+    @Test
+    void 주문로그_페이지네이션이_시간순으로_동작한다() {
+        RangeTradeOrderLog log1 = new RangeTradeOrderLog();
+        log1.setSymbol("001540");
+        when(orderLogMapper.findPage(0, 20)).thenReturn(List.of(log1));
+        when(orderLogMapper.countAll()).thenReturn(3);
+        when(stockInfoCache.get(List.of("001540")))
+                .thenReturn(List.of(new TossStock("001540", "안국약품", null, "KR", null, null, null, "KRW")));
+
+        Map<String, Object> page = controller.orderlog(0, 20);
+
+        assertThat(page.get("page")).isEqualTo(0);
+        assertThat(page.get("totalElements")).isEqualTo(3);
+        @SuppressWarnings("unchecked")
+        List<RangeTradeOrderLog> content = (List<RangeTradeOrderLog>) page.get("content");
+        assertThat(content).containsExactly(log1);
     }
 }

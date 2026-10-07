@@ -116,3 +116,23 @@ EXCEPTION
     IF SQLCODE != -1430 THEN RAISE; END IF; -- 이미 존재
 END;
 /
+
+-- 2026-10-08(#849) 대시보드에서 SELL 로그에 진입가를 보여주려고 추가. BUY행=체결가 자체,
+-- SELL행=그 포지션의 매수가(OrderExecutor가 이미 들고 있던 값, 재조회 없음).
+BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE auto_trade_order_log ADD (entry_price NUMBER)';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -1430 THEN RAISE; END IF; -- 이미 존재
+END;
+/
+
+-- 2026-10-08(#849) SELL 로그에 그 보유기간 중 피크가(트레일링스탑 기준값)도 같이 남긴다.
+-- BUY행은 아직 피크 이력이 없으므로 null.
+BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE auto_trade_order_log ADD (peak_price NUMBER)';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -1430 THEN RAISE; END IF; -- 이미 존재
+END;
+/

@@ -7,18 +7,28 @@
             useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
         INSERT INTO range_trade_order_log
             (symbol, side, reason, dry_run, requested_qty, requested_price, toss_order_id, success, message,
-             commission, tax, created_at)
+             commission, tax, entry_price, created_at)
         VALUES
             (#{symbol}, #{side}, #{reason}, #{dryRun}, #{requestedQty}, #{requestedPrice},
-             #{tossOrderId}, #{success}, #{message}, #{commission}, #{tax}, CURRENT_TIMESTAMP)
+             #{tossOrderId}, #{success}, #{message}, #{commission}, #{tax}, #{entryPrice}, CURRENT_TIMESTAMP)
     </insert>
 
-    <select id="findRecent" resultType="com.cloudhandson.tossstock.rangetrade.RangeTradeOrderLog">
+    <select id="findPage" resultType="com.cloudhandson.tossstock.rangetrade.RangeTradeOrderLog">
         SELECT id, symbol, side, reason, dry_run, requested_qty, requested_price, toss_order_id,
-               success, message, commission, tax, created_at
+               success, message, commission, tax, entry_price, created_at
         FROM range_trade_order_log
         ORDER BY created_at DESC
-        FETCH FIRST #{limit} ROWS ONLY
+        OFFSET #{offset} ROWS FETCH NEXT #{limit} ROWS ONLY
+    </select>
+
+    <select id="countAll" resultType="int">
+        SELECT COUNT(*) FROM range_trade_order_log
+    </select>
+
+    <select id="totalFees" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(COALESCE(commission, 0) + COALESCE(tax, 0)), 0)
+        FROM range_trade_order_log
+        WHERE success = 1
     </select>
 
 </mapper>

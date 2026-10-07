@@ -20,6 +20,7 @@ public class RangeTradeOrderLog {
     private String message;
     private BigDecimal commission;
     private BigDecimal tax;
+    private BigDecimal entryPrice;
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }
@@ -46,6 +47,8 @@ public class RangeTradeOrderLog {
     public void setCommission(BigDecimal commission) { this.commission = commission; }
     public BigDecimal getTax() { return tax; }
     public void setTax(BigDecimal tax) { this.tax = tax; }
+    public BigDecimal getEntryPrice() { return entryPrice; }
+    public void setEntryPrice(BigDecimal entryPrice) { this.entryPrice = entryPrice; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

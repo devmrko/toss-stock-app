@@ -63,7 +63,7 @@ public class RangeOrderExecutor {
                        BigDecimal rangeLow, BigDecimal rangeHigh, String rationale) {
         if (budget.compareTo(props.perSymbolBudget()) > 0) {
             log.warn("매수 차단(예산 상한 초과): symbol={}, budget={}, cap={}", symbol, budget, props.perSymbolBudget());
-            saveLogSafely(symbol, "BUY", "BUY_SIGNAL", true, null, null, null, false, "예산 상한 초과", null, null);
+            saveLogSafely(symbol, "BUY", "BUY_SIGNAL", true, null, null, null, false, "예산 상한 초과", null, null, null);
             return false;
         }
 
@@ -71,7 +71,7 @@ public class RangeOrderExecutor {
         BigDecimal qty = budget.divide(currentPrice, 0, RoundingMode.DOWN);
         if (qty.signum() <= 0) {
             saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, null, currentPrice, null, false, "수량 0(예산 부족)",
-                    null, null);
+                    null, null, null);
             return false;
         }
 
@@ -101,7 +101,7 @@ public class RangeOrderExecutor {
         }
 
         saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, qty, filledPrice, tossOrderId, success,
-                compose(rationale, message), commission, tax);
+                compose(rationale, message), commission, tax, success ? filledPrice : null);
         if (!success) {
             notify("⚠️ [레인지] " + symbol + " 매수 실패 — " + message);
             return false; // 재시도 안 함(#808과 동일 원칙)
@@ -158,7 +158,7 @@ public class RangeOrderExecutor {
         }
 
         saveLogSafely(position.getSymbol(), "SELL", reason.name(), dryRun, position.getEntryQty(), filledPrice,
-                tossOrderId, success, compose(rationale, message), commission, tax);
+                tossOrderId, success, compose(rationale, message), commission, tax, position.getEntryPrice());
         if (!success) {
             notify("⚠️ [레인지] " + position.getSymbol() + " 매도 실패 — " + message);
             return false;
@@ -209,7 +209,7 @@ public class RangeOrderExecutor {
      */
     private void saveLogSafely(String symbol, String side, String reason, boolean dryRun, BigDecimal qty,
                                BigDecimal price, String tossOrderId, boolean success, String message,
-                               BigDecimal commission, BigDecimal tax) {
+                               BigDecimal commission, BigDecimal tax, BigDecimal entryPrice) {
         try {
             RangeTradeOrderLog entry = new RangeTradeOrderLog();
             entry.setSymbol(symbol);
@@ -223,6 +223,7 @@ public class RangeOrderExecutor {
             entry.setMessage(message);
             entry.setCommission(commission);
             entry.setTax(tax);
+            entry.setEntryPrice(entryPrice);
             logMapper.insert(entry);
         } catch (RuntimeException e) {
             log.error("[레인지] 주문 감사로그 기록 실패(symbol={}, side={}, success={}) — 포지션 기록/흐름은 계속 진행: {}",

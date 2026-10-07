@@ -16,6 +16,7 @@ class HoldingPnlViewTest {
         p.setEntryPrice(entryPrice);
         p.setEntryQty(entryQty);
         p.setEntryAt(LocalDateTime.of(2026, 10, 7, 9, 0));
+        p.setPeakPrice(BigDecimal.valueOf(11500));
         p.setDryRun(false);
         return p;
     }
@@ -23,28 +24,31 @@ class HoldingPnlViewTest {
     @Test
     void 현재가_있으면_손익과_변동률_계산() {
         HoldingPnlView view = HoldingPnlView.of(position(BigDecimal.valueOf(10000), BigDecimal.valueOf(10)),
-                BigDecimal.valueOf(11000), "삼성전자");
+                BigDecimal.valueOf(11000), "삼성전자", "뉴스:S5 \"호재\"");
 
         assertThat(view.unrealizedPnl()).isEqualTo(BigDecimal.valueOf(10000));
         assertThat(view.priceChangePct()).isEqualTo(10.0);
         assertThat(view.name()).isEqualTo("삼성전자");
+        assertThat(view.buyReason()).contains("호재");
+        assertThat(view.peakPrice()).isEqualTo(BigDecimal.valueOf(11500));
     }
 
     @Test
     void 현재가_없으면_손익필드도_null_0으로_단정하지_않음() {
         HoldingPnlView view = HoldingPnlView.of(position(BigDecimal.valueOf(10000), BigDecimal.valueOf(10)), null,
-                null);
+                null, null);
 
         assertThat(view.currentPrice()).isNull();
         assertThat(view.unrealizedPnl()).isNull();
         assertThat(view.priceChangePct()).isNull();
         assertThat(view.name()).isNull();
+        assertThat(view.buyReason()).isNull();
     }
 
     @Test
     void 현재가가_매수가와_같으면_변동률_0() {
         HoldingPnlView view = HoldingPnlView.of(position(BigDecimal.valueOf(10000), BigDecimal.valueOf(10)),
-                BigDecimal.valueOf(10000), "삼성전자");
+                BigDecimal.valueOf(10000), "삼성전자", null);
 
         assertThat(view.unrealizedPnl()).isEqualTo(BigDecimal.ZERO);
         assertThat(view.priceChangePct()).isEqualTo(0.0);

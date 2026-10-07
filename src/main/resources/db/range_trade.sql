@@ -92,3 +92,12 @@ EXCEPTION
     IF SQLCODE != -1430 THEN RAISE; END IF; -- 이미 존재
 END;
 /
+
+-- 2026-10-08(#849) — #808과 동일하게 SELL 로그에 진입가 저장.
+BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE range_trade_order_log ADD (entry_price NUMBER)';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -1430 THEN RAISE; END IF; -- 이미 존재
+END;
+/

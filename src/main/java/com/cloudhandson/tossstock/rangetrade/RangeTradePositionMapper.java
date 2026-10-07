@@ -26,4 +26,13 @@ public interface RangeTradePositionMapper {
 
     /** EXITED 포지션 전체의 realized 손익 합계(스칼라, #845) — #808과 동일 성능개선. 0건이면 0. */
     BigDecimal realizedPnlTotal();
+
+    /** EXITED 포지션 총 건수(#849 요약, 총 매매건수). */
+    int countExited();
+
+    /** exit_price > entry_price 인 EXITED 건수(#849 요약, 승). */
+    int countWin();
+
+    /** exit_price &lt; entry_price 인 EXITED 건수(#849 요약, 패) — 본전(동일가)은 승/패 어느 쪽에도 안 들어감. */
+    int countLoss();
 }

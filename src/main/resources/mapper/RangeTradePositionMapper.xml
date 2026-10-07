@@ -37,6 +37,18 @@
         FROM range_trade_position WHERE status = 'EXITED'
     </select>
 
+    <select id="countExited" resultType="int">
+        SELECT COUNT(*) FROM range_trade_position WHERE status = 'EXITED'
+    </select>
+
+    <select id="countWin" resultType="int">
+        SELECT COUNT(*) FROM range_trade_position WHERE status = 'EXITED' AND exit_price > entry_price
+    </select>
+
+    <select id="countLoss" resultType="int">
+        SELECT COUNT(*) FROM range_trade_position WHERE status = 'EXITED' AND exit_price &lt; entry_price
+    </select>
+
     <!-- Oracle IDENTITY 키 반환: keyColumn 명시 필수(미지정 시 ROWID 반환 → ORA-17132) -->
     <insert id="insert" parameterType="com.cloudhandson.tossstock.rangetrade.RangeTradePosition"
             useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
