@@ -30,15 +30,21 @@ import java.util.concurrent.ConcurrentHashMap;
  * processHolding도 뉴스 식은 보유종목마다 매 틱)이 캐싱 없이 매분 이 메서드를 호출 — 저평가+
  * 상대강세가 며칠 유지되는 종목 하나만으로도 하루 1,440회씩 네이버/야후를 때려 레이트리밋/차단
  * 위험(테스트 픽스처에 있는 HTTP 429가 실제로 재현될 수 있음). PER/PBR은 분 단위로 바뀌지 않으므로
- * 짧은 TTL 캐시로 호출량을 줄인다 — 실패(null)도 캐시해서 장애 중 재시도 폭주를 막는다(fail-closed
- * 방향과도 일치: 캐시된 null이 풀리기 전까지는 계속 "저평가 아님"으로 안전하게 취급됨).
+ * 짧은 TTL 캐시로 호출량을 줄인다.
+ * 2026-10-07(#836 코덱스 리뷰 반영): 실패(null)를 성공과 같은 15분으로 캐시하면, API 일시 장애
+ * "한 틱"의 영향이 15분간 고정돼 그 사이 보유종목이 "확인 불가"를 "저평가/상대강세 아님"으로 오인해
+ * 매도될 위험이 커짐(매수 차단엔 안전한 방향이지만 매도 트리거엔 그렇지 않음) — 실패는 짧게(1분)만
+ * 캐시해서 재시도 간격은 벌려주되(API 폭주 방지) 장애의 영향이 오래 고정되진 않게 한다. getValuation
+ * (PER/PBR)과 getIndexReturnPct(지수 수익률, #828의 US 상대강세 판정에 사용) 둘 다 적용 — 전자만
+ * 캐싱하면 US 종목은 지수 조회가 매 틱 그대로 남는다는 걸 코덱스 리뷰로 확인.
  */
 @Component
 public class ValuationClient {
 
     private static final Logger log = LoggerFactory.getLogger(ValuationClient.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(8);
-    private static final Duration CACHE_TTL = Duration.ofMinutes(15);
+    private static final Duration SUCCESS_CACHE_TTL = Duration.ofMinutes(15);
+    private static final Duration FAILURE_CACHE_TTL = Duration.ofMinutes(1);
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(TIMEOUT)
@@ -46,22 +52,24 @@ public class ValuationClient {
             .build();
     private final ObjectMapper om = new ObjectMapper();
     private volatile String yahooCrumb;
-    private final Map<String, CachedValuation> valuationCache = new ConcurrentHashMap<>();
+    private final Map<String, Cached<Valuation>> valuationCache = new ConcurrentHashMap<>();
+    private final Map<String, Cached<Double>> indexReturnCache = new ConcurrentHashMap<>();
 
-    private record CachedValuation(Valuation valuation, Instant fetchedAt) {
+    private record Cached<T>(T value, Instant fetchedAt) {
         boolean expired() {
-            return Duration.between(fetchedAt, Instant.now()).compareTo(CACHE_TTL) >= 0;
+            Duration ttl = value == null ? FAILURE_CACHE_TTL : SUCCESS_CACHE_TTL;
+            return Duration.between(fetchedAt, Instant.now()).compareTo(ttl) >= 0;
         }
     }
 
     public Valuation getValuation(String symbol, String market) {
         String key = market + ":" + symbol;
-        CachedValuation cached = valuationCache.get(key);
+        Cached<Valuation> cached = valuationCache.get(key);
         if (cached != null && !cached.expired()) {
-            return cached.valuation();
+            return cached.value();
         }
         Valuation fresh = fetchValuation(symbol, market);
-        valuationCache.put(key, new CachedValuation(fresh, Instant.now()));
+        valuationCache.put(key, new Cached<>(fresh, Instant.now()));
         return fresh;
     }
 
@@ -281,6 +289,17 @@ public class ValuationClient {
      * 확인, getValuation/getAnnualFinancials의 quoteSummary와 다른 엔드포인트). 실패 시 null.
      */
     public Double getIndexReturnPct(String symbol, int windowDays) {
+        String key = symbol + ":" + windowDays;
+        Cached<Double> cached = indexReturnCache.get(key);
+        if (cached != null && !cached.expired()) {
+            return cached.value();
+        }
+        Double fresh = fetchIndexReturnPct(symbol, windowDays);
+        indexReturnCache.put(key, new Cached<>(fresh, Instant.now()));
+        return fresh;
+    }
+
+    private Double fetchIndexReturnPct(String symbol, int windowDays) {
         try {
             HttpRequest req = HttpRequest.newBuilder(
                     URI.create("https://query1.finance.yahoo.com/v8/finance/chart/" + symbol + "?range=6mo&interval=1d"))

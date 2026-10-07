@@ -24,4 +24,10 @@ public interface AutoTradePositionMapper {
                     @Param("exitReason") String exitReason, @Param("exitAt") LocalDateTime exitAt);
 
     int countHolding();
+
+    /**
+     * 해당 종목이 가장 최근 NEWS_FADED로 청산된 시각(없으면 null) — #828 유지경로 재매수 쿨다운(#835
+     * QA, 2026-10-07)에 쓴다. 다른 사유(하드/트레일스탑 등)로 청산된 건은 대상이 아님.
+     */
+    LocalDateTime lastNewsFadedExitAt(@Param("symbol") String symbol);
 }

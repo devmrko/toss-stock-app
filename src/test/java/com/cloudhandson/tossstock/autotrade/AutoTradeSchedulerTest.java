@@ -59,7 +59,7 @@ class AutoTradeSchedulerTest {
         return new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI",
                 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000),
-                BigDecimal.valueOf(350_000), 20, 1, 30, new AutoTradeProperties.Gate(35));
+                BigDecimal.valueOf(350_000), 20, 1, 30, 60, new AutoTradeProperties.Gate(35));
     }
 
     @BeforeEach
@@ -176,6 +176,55 @@ class AutoTradeSchedulerTest {
         verify(orderExecutor).buy(eq(SYMBOL), eq("KR"), any(), any(), rationale.capture());
         // 로깅용 조회 실패가 매수를 막지 않는다 — 뉴스만 N/A.
         assertThat(rationale.getValue()).endsWith("뉴스:N/A");
+    }
+
+    @Test
+    void retention_path_buy_is_blocked_during_news_faded_cooldown() {
+        // #835 QA(2026-10-07) 재발 방지: 뉴스 식었지만(hasNewsFaded) 저평가+상대강세라
+        // retainDespiteNewsFade는 true인데도, 바로 직전(쿨다운 60분 이내)에 같은 종목이
+        // NEWS_FADED로 청산된 적 있으면 재매수하지 않는다.
+        AutoTradeCandidate c = new AutoTradeCandidate();
+        c.setSymbol(SYMBOL);
+        c.setMarket("KR");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(candidateMapper.findActive()).thenReturn(List.of(c));
+        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
+        when(candidateDiscovery.retainDespiteNewsFade(c)).thenReturn(true);
+        when(positionMapper.lastNewsFadedExitAt(SYMBOL)).thenReturn(LocalDateTime.now().minusMinutes(5));
+
+        scheduler.tick();
+
+        verify(orderExecutor, org.mockito.Mockito.never()).buy(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void retention_path_buy_proceeds_once_cooldown_elapsed() {
+        AutoTradeCandidate c = new AutoTradeCandidate();
+        c.setSymbol(SYMBOL);
+        c.setMarket("KR");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(positionMapper.findAll()).thenReturn(List.of());
+        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(candidateMapper.findActive()).thenReturn(List.of(c));
+        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
+        when(candidateDiscovery.retainDespiteNewsFade(c)).thenReturn(true);
+        // 쿨다운(60분)보다 오래 전에 청산됨 → 재매수 허용
+        when(positionMapper.lastNewsFadedExitAt(SYMBOL)).thenReturn(LocalDateTime.now().minusHours(2));
+        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
+        when(valuationClient.getValuation(SYMBOL, "KR"))
+                .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
+        when(catalystDetector.hasRecentCatalyst(SYMBOL)).thenReturn(false);
+        when(priceCache.get(List.of(SYMBOL)))
+                .thenReturn(List.of(new TossPrice(SYMBOL, "102000", "KRW", null)));
+
+        scheduler.tick();
+
+        verify(orderExecutor).buy(eq(SYMBOL), eq("KR"), any(), any(), any());
     }
 
     /** 전일 100,000 → 당일 102,000(+2.0%, 가격 트리거). 거래량 윈도우(20일)는 일부러 부족하게 둔다. */

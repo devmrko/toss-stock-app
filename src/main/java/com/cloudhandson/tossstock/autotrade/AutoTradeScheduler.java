@@ -183,8 +183,13 @@ public class AutoTradeScheduler {
             if (!MarketHours.isOpen(c.getMarket(), LocalDateTime.now())) {
                 continue; // 그 시장이 지금 닫혀있음(KST 기준, 한국/미국 각각 판단)
             }
-            if (newsFadeDetector.hasNewsFaded(c.getSymbol()) && !candidateDiscovery.retainDespiteNewsFade(c)) {
-                continue; // 호재(S4↑) 없고, 저평가+상대강세 예외(#828)도 아님
+            if (newsFadeDetector.hasNewsFaded(c.getSymbol())) {
+                if (!candidateDiscovery.retainDespiteNewsFade(c)) {
+                    continue; // 호재(S4↑) 없고, 저평가+상대강세 예외(#828)도 아님
+                }
+                if (recentlyExitedViaNewsFade(c.getSymbol())) {
+                    continue; // #828 유지경로 쿨다운(#835 QA) — 뉴스소멸 매도 직후 같은 경로로 바로 재매수 금지
+                }
             }
             List<DailyOhlcv> recent = dailyMapper.recentForSymbols(List.of(c.getSymbol()),
                     LocalDate.now().minusDays(props.volumeSpikeWindowDays() + 10));
@@ -217,6 +222,18 @@ public class AutoTradeScheduler {
      * 매수 결정근거 스냅샷(#832) — 게이트 통과에 쓴 값들을 그대로 재사용해 포맷만 한다. 판정은 하지 않는다.
      * 인기 트리거 수치는 {@link PopularityChecker}의 동일 공식 추출값, 트리거 뉴스는 로컬 DB 1회 조회.
      */
+    /**
+     * NEWS_FADED로 청산된 지 news-faded-cooldown-minutes 이내인지 — #828 유지경로(저평가+상대강세)
+     * 재매수 쿨다운(#835 QA, 2026-10-07). 판정이 임계값 근처에서 흔들려 매도 직후 바로 같은 경로로
+     * 재매수되는 걸 막는다(신규 호재는 이 쿨다운과 무관하게 정상 매수 가능 — hasNewsFaded가 false면
+     * 이 메서드 자체가 호출되지 않음).
+     */
+    private boolean recentlyExitedViaNewsFade(String symbol) {
+        LocalDateTime lastExit = positionMapper.lastNewsFadedExitAt(symbol);
+        return lastExit != null
+                && lastExit.isAfter(LocalDateTime.now().minusMinutes(props.newsFadedCooldownMinutes()));
+    }
+
     private String buyRationale(AutoTradeCandidate c, List<DailyOhlcv> recent, Valuation valuation,
                                  boolean cheap, boolean rerateCatalyst, FundamentalScore score) {
         String newsLabel = topActiveNewsLabel(c.getSymbol());

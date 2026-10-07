@@ -29,6 +29,11 @@
         SELECT COUNT(*) FROM auto_trade_position WHERE status = 'HOLDING'
     </select>
 
+    <select id="lastNewsFadedExitAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(exit_at) FROM auto_trade_position
+        WHERE symbol = #{symbol} AND status = 'EXITED' AND exit_reason = 'NEWS_FADED'
+    </select>
+
     <!-- Oracle IDENTITY 키 반환: keyColumn 명시 필수(미지정 시 ROWID 반환 → ORA-17132) -->
     <insert id="insert" parameterType="com.cloudhandson.tossstock.autotrade.AutoTradePosition"
             useGeneratedKeys="true" keyProperty="id" keyColumn="ID">
