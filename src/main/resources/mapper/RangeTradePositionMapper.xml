@@ -51,11 +51,15 @@
 
     <select id="realizedFeesTotal" resultType="java.math.BigDecimal">
         SELECT COALESCE(SUM(
-            COALESCE((SELECT COALESCE(buy_log.commission, 0) + COALESCE(buy_log.tax, 0)
+            COALESCE((SELECT SUM(COALESCE(buy_log.commission, 0) + COALESCE(buy_log.tax, 0))
                       FROM range_trade_order_log buy_log
                       WHERE buy_log.symbol = p.symbol AND buy_log.side = 'BUY' AND buy_log.success = 1
-                        AND buy_log.created_at &lt;= p.entry_at
-                      ORDER BY buy_log.created_at DESC FETCH FIRST 1 ROWS ONLY), 0)
+                        AND buy_log.created_at &lt;= p.exit_at
+                        AND buy_log.created_at > COALESCE(
+                            (SELECT MAX(prev_pos.exit_at) FROM range_trade_position prev_pos
+                             WHERE prev_pos.symbol = p.symbol AND prev_pos.status = 'EXITED'
+                               AND prev_pos.exit_at &lt; p.entry_at),
+                            TIMESTAMP '0001-01-01 00:00:00')), 0)
             +
             COALESCE((SELECT COALESCE(sell_log.commission, 0) + COALESCE(sell_log.tax, 0)
                       FROM range_trade_order_log sell_log
@@ -74,11 +78,15 @@
                    COUNT(*) AS trades,
                    SUM((p.exit_price - p.entry_price) * p.entry_qty) AS gross_pnl,
                    SUM(
-                       COALESCE((SELECT COALESCE(buy_log.commission, 0) + COALESCE(buy_log.tax, 0)
+                       COALESCE((SELECT SUM(COALESCE(buy_log.commission, 0) + COALESCE(buy_log.tax, 0))
                                  FROM range_trade_order_log buy_log
                                  WHERE buy_log.symbol = p.symbol AND buy_log.side = 'BUY' AND buy_log.success = 1
-                                   AND buy_log.created_at &lt;= p.entry_at
-                                 ORDER BY buy_log.created_at DESC FETCH FIRST 1 ROWS ONLY), 0)
+                                   AND buy_log.created_at &lt;= p.exit_at
+                                   AND buy_log.created_at > COALESCE(
+                                       (SELECT MAX(prev_pos.exit_at) FROM range_trade_position prev_pos
+                                        WHERE prev_pos.symbol = p.symbol AND prev_pos.status = 'EXITED'
+                                          AND prev_pos.exit_at &lt; p.entry_at),
+                                       TIMESTAMP '0001-01-01 00:00:00')), 0)
                        +
                        COALESCE((SELECT COALESCE(sell_log.commission, 0) + COALESCE(sell_log.tax, 0)
                                  FROM range_trade_order_log sell_log
