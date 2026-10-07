@@ -1,7 +1,9 @@
 package com.cloudhandson.tossstock.autotrade;
 
 import com.cloudhandson.tossstock.toss.PriceCache;
+import com.cloudhandson.tossstock.toss.StockInfoCache;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
+import com.cloudhandson.tossstock.toss.dto.TossStock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +26,7 @@ class AutoTradeControllerTest {
     private AutoTradeCandidateMapper candidateMapper;
     private AutoTradeOrderLogMapper orderLogMapper;
     private PriceCache priceCache;
+    private StockInfoCache stockInfoCache;
     private AutoTradeController controller;
 
     @BeforeEach
@@ -35,8 +38,10 @@ class AutoTradeControllerTest {
         candidateMapper = mock(AutoTradeCandidateMapper.class);
         orderLogMapper = mock(AutoTradeOrderLogMapper.class);
         priceCache = mock(PriceCache.class);
+        stockInfoCache = mock(StockInfoCache.class);
+        when(stockInfoCache.get(anyList())).thenReturn(List.of());
         controller = new AutoTradeController(scheduler, discoveryService, stateMapper, positionMapper,
-                candidateMapper, orderLogMapper, priceCache);
+                candidateMapper, orderLogMapper, priceCache, stockInfoCache);
     }
 
     @Test
@@ -51,6 +56,8 @@ class AutoTradeControllerTest {
         when(candidateMapper.findActive()).thenReturn(List.of());
         when(priceCache.get(List.of("005930")))
                 .thenReturn(List.of(new TossPrice("005930", "72000", "KRW", null)));
+        when(stockInfoCache.get(List.of("005930")))
+                .thenReturn(List.of(new TossStock("005930", "삼성전자", "Samsung Electronics", "KR", null, null, null, "KRW")));
         when(orderLogMapper.findRecent(20)).thenReturn(List.of());
 
         Map<String, Object> result = controller.status();
@@ -60,8 +67,12 @@ class AutoTradeControllerTest {
         assertThat(holdingsView).hasSize(1);
         assertThat(holdingsView.get(0).currentPrice()).isEqualTo(BigDecimal.valueOf(72000));
         assertThat(holdingsView.get(0).unrealizedPnl()).isEqualTo(BigDecimal.valueOf(20000));
+        assertThat(holdingsView.get(0).name()).isEqualTo("삼성전자");
         assertThat(result.get("recentLogs")).isEqualTo(List.of());
         assertThat(result.get("holdings")).isEqualTo(List.of(position));
+        @SuppressWarnings("unchecked")
+        Map<String, String> symbolNames = (Map<String, String>) result.get("symbolNames");
+        assertThat(symbolNames).containsEntry("005930", "삼성전자");
     }
 
     @Test

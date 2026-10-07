@@ -1,7 +1,9 @@
 package com.cloudhandson.tossstock.rangetrade;
 
 import com.cloudhandson.tossstock.toss.PriceCache;
+import com.cloudhandson.tossstock.toss.StockInfoCache;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
+import com.cloudhandson.tossstock.toss.dto.TossStock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +23,7 @@ class RangeTradeControllerTest {
     private RangeTradePositionMapper positionMapper;
     private RangeTradeOrderLogMapper orderLogMapper;
     private PriceCache priceCache;
+    private StockInfoCache stockInfoCache;
     private RangeTradeController controller;
 
     @BeforeEach
@@ -29,7 +32,9 @@ class RangeTradeControllerTest {
         positionMapper = mock(RangeTradePositionMapper.class);
         orderLogMapper = mock(RangeTradeOrderLogMapper.class);
         priceCache = mock(PriceCache.class);
-        controller = new RangeTradeController(stateMapper, positionMapper, orderLogMapper, priceCache);
+        stockInfoCache = mock(StockInfoCache.class);
+        when(stockInfoCache.get(anyList())).thenReturn(List.of());
+        controller = new RangeTradeController(stateMapper, positionMapper, orderLogMapper, priceCache, stockInfoCache);
     }
 
     @Test
@@ -43,6 +48,8 @@ class RangeTradeControllerTest {
         when(positionMapper.findHolding()).thenReturn(List.of(position));
         when(priceCache.get(List.of("001540")))
                 .thenReturn(List.of(new TossPrice("001540", "9800", "KRW", null)));
+        when(stockInfoCache.get(List.of("001540")))
+                .thenReturn(List.of(new TossStock("001540", "안국약품", "Ahnkook Pharmaceutical", "KR", null, null, null, "KRW")));
         when(orderLogMapper.findRecent(20)).thenReturn(List.of());
 
         Map<String, Object> result = controller.status();
@@ -52,6 +59,7 @@ class RangeTradeControllerTest {
         assertThat(holdingsView).hasSize(1);
         assertThat(holdingsView.get(0).currentPrice()).isEqualTo(BigDecimal.valueOf(9800));
         assertThat(holdingsView.get(0).unrealizedPnl()).isEqualTo(BigDecimal.valueOf(-10000));
+        assertThat(holdingsView.get(0).name()).isEqualTo("안국약품");
     }
 
     @Test

@@ -1,7 +1,9 @@
 package com.cloudhandson.tossstock.autotrade;
 
 import com.cloudhandson.tossstock.toss.PriceCache;
+import com.cloudhandson.tossstock.toss.StockInfoCache;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
+import com.cloudhandson.tossstock.toss.dto.TossStock;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,11 +30,12 @@ public class AutoTradeController {
     private final AutoTradeCandidateMapper candidateMapper;
     private final AutoTradeOrderLogMapper orderLogMapper;
     private final PriceCache priceCache;
+    private final StockInfoCache stockInfoCache;
 
     public AutoTradeController(AutoTradeScheduler scheduler, CandidateDiscoveryService discoveryService,
                                 AutoTradeStateMapper stateMapper, AutoTradePositionMapper positionMapper,
                                 AutoTradeCandidateMapper candidateMapper, AutoTradeOrderLogMapper orderLogMapper,
-                                PriceCache priceCache) {
+                                PriceCache priceCache, StockInfoCache stockInfoCache) {
         this.scheduler = scheduler;
         this.discoveryService = discoveryService;
         this.stateMapper = stateMapper;
@@ -40,6 +43,7 @@ public class AutoTradeController {
         this.candidateMapper = candidateMapper;
         this.orderLogMapper = orderLogMapper;
         this.priceCache = priceCache;
+        this.stockInfoCache = stockInfoCache;
     }
 
     /** 스케줄러 강제 1회 실행(드라이런 여부는 auto_trade_state/설정을 그대로 따름 — 이 호출 자체가 안전장치를 우회하지 않음). */
@@ -61,6 +65,17 @@ public class AutoTradeController {
         AutoTradeState state = stateMapper.find();
         List<AutoTradePosition> holdings = positionMapper.findHolding();
         List<AutoTradeCandidate> candidates = candidateMapper.findActive();
+        List<AutoTradeOrderLog> recentLogs = orderLogMapper.findRecent(RECENT_LOG_LIMIT);
+
+        List<String> allSymbols = java.util.stream.Stream.concat(
+                        holdings.stream().map(AutoTradePosition::getSymbol),
+                        recentLogs.stream().map(AutoTradeOrderLog::getSymbol))
+                .distinct().toList();
+        Map<String, String> nameBySymbol = new java.util.HashMap<>();
+        for (TossStock s : safeStockInfo(allSymbols)) {
+            nameBySymbol.put(s.symbol(), s.name());
+        }
+
         Map<String, Object> result = new java.util.HashMap<>();
         result.put("dryRun", state == null || state.isDryRun());
         result.put("circuitBreakerTripped", state != null && state.isCircuitBreakerTripped());
@@ -68,13 +83,14 @@ public class AutoTradeController {
         result.put("holdingCount", holdings.size());
         result.put("holdings", holdings);
         result.put("activeCandidates", candidates);
-        result.put("holdingsView", holdingsView(holdings));
-        result.put("recentLogs", orderLogMapper.findRecent(RECENT_LOG_LIMIT));
+        result.put("holdingsView", holdingsView(holdings, nameBySymbol));
+        result.put("recentLogs", recentLogs);
+        result.put("symbolNames", nameBySymbol);
         return result;
     }
 
-    /** 보유종목을 현재가와 짝지어 뷰로 변환(#848) — 시세조회 부분실패는 currentPrice=null로 흡수. */
-    private List<HoldingPnlView> holdingsView(List<AutoTradePosition> holdings) {
+    /** 보유종목을 현재가·종목명과 짝지어 뷰로 변환(#848) — 시세조회 부분실패는 currentPrice=null로 흡수. */
+    private List<HoldingPnlView> holdingsView(List<AutoTradePosition> holdings, Map<String, String> nameBySymbol) {
         if (holdings.isEmpty()) {
             return List.of();
         }
@@ -90,13 +106,21 @@ public class AutoTradeController {
             }
         }
         return holdings.stream()
-                .map(h -> HoldingPnlView.of(h, priceBySymbol.get(h.getSymbol())))
+                .map(h -> HoldingPnlView.of(h, priceBySymbol.get(h.getSymbol()), nameBySymbol.get(h.getSymbol())))
                 .toList();
     }
 
     private List<TossPrice> safePrices(List<String> symbols) {
         try {
             return priceCache.get(symbols);
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    private List<TossStock> safeStockInfo(List<String> symbols) {
+        try {
+            return stockInfoCache.get(symbols);
         } catch (RuntimeException e) {
             return List.of();
         }

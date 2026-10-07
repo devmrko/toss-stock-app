@@ -94,7 +94,7 @@
         </tr></thead>
         <tbody>${rows.map(r => `
           <tr>
-            <td>${r.symbol}${r.dryRun ? '<span class="tag dry">드라이런</span>' : ''}</td>
+            <td>${r.name || r.symbol}<span class="dimv"> ${r.symbol}</span>${r.dryRun ? '<span class="tag dry">드라이런</span>' : ''}</td>
             <td>${r.market}</td>
             <td class="num">${fmtNum(r.entryPrice)}</td>
             <td class="num">${fmtNum(r.entryQty)}</td>
@@ -105,7 +105,7 @@
           </tr>`).join('')}</tbody>`;
     }
 
-    function renderLogs(table, rows) {
+    function renderLogs(table, rows, names) {
       if (!rows || rows.length === 0) {
         table.innerHTML = '<tbody><tr><td class="empty" colspan="8">최근 주문로그 없음</td></tr></tbody>';
         return;
@@ -116,7 +116,7 @@
         </tr></thead>
         <tbody>${rows.map(r => `
           <tr>
-            <td>${r.symbol}${r.dryRun ? '<span class="tag dry">드라이런</span>' : ''}${r.success ? '' : '<span class="tag fail">실패</span>'}</td>
+            <td>${(names[r.symbol] || r.symbol)}<span class="dimv"> ${r.symbol}</span>${r.dryRun ? '<span class="tag dry">드라이런</span>' : ''}${r.success ? '' : '<span class="tag fail">실패</span>'}</td>
             <td><span class="sidetag ${r.side}">${r.side}</span></td>
             <td class="dimv">${r.reason || '-'}</td>
             <td class="num">${fmtNum(r.requestedQty)}</td>
@@ -134,7 +134,7 @@
         const s = await res.json();
         renderBadges(document.getElementById(prefix + '-badges'), s);
         renderHoldings(document.getElementById(prefix + '-holdings'), s.holdingsView);
-        renderLogs(document.getElementById(prefix + '-logs'), s.recentLogs);
+        renderLogs(document.getElementById(prefix + '-logs'), s.recentLogs, s.symbolNames || {});
       } catch (e) {
         document.getElementById(prefix + '-badges').innerHTML =
           '<span class="badge cb-tripped">⚠️ 조회 실패: ' + e.message + '</span>';
