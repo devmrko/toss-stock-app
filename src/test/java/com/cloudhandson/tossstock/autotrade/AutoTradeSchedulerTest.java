@@ -59,7 +59,7 @@ class AutoTradeSchedulerTest {
         return new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI",
                 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000),
-                BigDecimal.valueOf(350_000), 20, 1, 30, 60, new AutoTradeProperties.Gate(35));
+                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 8.0, new AutoTradeProperties.Gate(35));
     }
 
     @BeforeEach
@@ -179,6 +179,56 @@ class AutoTradeSchedulerTest {
     }
 
     @Test
+    void extreme_move_without_fundamental_catalyst_is_held_back() {
+        // #838(2026-10-07, 안랩 실사례): 당일 +10%(임계값 8% 이상)인데 실적직결 촉매가 없으면
+        // 저평가/펀더멘털을 다 통과해도 그 틱엔 매수하지 않는다.
+        AutoTradeCandidate c = new AutoTradeCandidate();
+        c.setSymbol(SYMBOL);
+        c.setMarket("KR");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(candidateMapper.findActive()).thenReturn(List.of(c));
+        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
+        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(extremeMoveBars());
+        when(valuationClient.getValuation(SYMBOL, "KR"))
+                .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
+        when(catalystDetector.hasRecentCatalyst(SYMBOL)).thenReturn(false);
+        when(priceCache.get(List.of(SYMBOL)))
+                .thenReturn(List.of(new TossPrice(SYMBOL, "110000", "KRW", null)));
+
+        scheduler.tick();
+
+        verify(orderExecutor, org.mockito.Mockito.never()).buy(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void extreme_move_with_fundamental_catalyst_still_buys() {
+        // 같은 당일 +10%라도 실적직결 촉매(수주/계약 등)가 있으면 보류하지 않는다(066570류 사례).
+        AutoTradeCandidate c = new AutoTradeCandidate();
+        c.setSymbol(SYMBOL);
+        c.setMarket("KR");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(positionMapper.findAll()).thenReturn(List.of());
+        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(candidateMapper.findActive()).thenReturn(List.of(c));
+        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
+        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(extremeMoveBars());
+        when(valuationClient.getValuation(SYMBOL, "KR"))
+                .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
+        when(catalystDetector.hasRecentCatalyst(SYMBOL)).thenReturn(true);
+        when(priceCache.get(List.of(SYMBOL)))
+                .thenReturn(List.of(new TossPrice(SYMBOL, "110000", "KRW", null)));
+
+        scheduler.tick();
+
+        verify(orderExecutor).buy(eq(SYMBOL), eq("KR"), any(), any(), any());
+    }
+
+    @Test
     void retention_path_buy_is_blocked_during_news_faded_cooldown() {
         // #835 QA(2026-10-07) 재발 방지: 뉴스 식었지만(hasNewsFaded) 저평가+상대강세라
         // retainDespiteNewsFade는 true인데도, 바로 직전(쿨다운 60분 이내)에 같은 종목이
@@ -235,6 +285,16 @@ class AutoTradeSchedulerTest {
                         BigDecimal.valueOf(100_000), BigDecimal.valueOf(100_000), 1_000_000L),
                 new DailyOhlcv(SYMBOL, d0.plusDays(1), BigDecimal.valueOf(102_000), BigDecimal.valueOf(102_000),
                         BigDecimal.valueOf(102_000), BigDecimal.valueOf(102_000), 1_100_000L));
+    }
+
+    /** 전일 100,000 → 당일 110,000(+10.0%, #838 임계값 8% 초과하는 극단적 급등). */
+    private static List<DailyOhlcv> extremeMoveBars() {
+        LocalDate d0 = LocalDate.now().minusDays(1);
+        return List.of(
+                new DailyOhlcv(SYMBOL, d0, BigDecimal.valueOf(100_000), BigDecimal.valueOf(100_000),
+                        BigDecimal.valueOf(100_000), BigDecimal.valueOf(100_000), 1_000_000L),
+                new DailyOhlcv(SYMBOL, d0.plusDays(1), BigDecimal.valueOf(110_000), BigDecimal.valueOf(110_000),
+                        BigDecimal.valueOf(110_000), BigDecimal.valueOf(110_000), 1_100_000L));
     }
 
     private static StockNews news(String title, String sentiment) {

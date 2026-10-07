@@ -199,6 +199,13 @@ public class AutoTradeScheduler {
             Valuation valuation = valuationClient.getValuation(c.getSymbol(), c.getMarket());
             boolean cheap = ValuationChecker.isUndervalued(valuation, props.maxPer(), props.maxPbr());
             boolean rerateCatalyst = capitalReturnCatalystDetector.hasRecentCatalyst(c.getSymbol());
+            // #838(2026-10-07, 안랩/053800 실사례): 당일 급등이 실적직결 촉매 없는 순수 테마성
+            // 반응이면 단기 트레이더 쏠림→되돌림 위험이 커서 당일 매수는 보류한다(날짜 추적 없이
+            // "당일 변동"만 봄 — 다음 거래일엔 자연히 재평가됨). 신규 I/O 없이 이미 계산된
+            // recent/rerateCatalyst만 재사용.
+            if (PopularityChecker.priceMovePct(recent) >= props.extremeMovePct() && !rerateCatalyst) {
+                continue; // 테마성 과열(실적직결 촉매 없는 당일 급등) — 오늘은 매수 보류
+            }
             if (!cheap && !rerateCatalyst) {
                 continue; // 이미 싼 것도 아니고, 자본배분(재평가) 촉매도 없음 — 원칙 §2/§3-7 둘 다 미달
             }

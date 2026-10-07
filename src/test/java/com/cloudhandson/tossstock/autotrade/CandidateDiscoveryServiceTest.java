@@ -46,7 +46,7 @@ class CandidateDiscoveryServiceTest {
         dailyMapper = mock(DailyOhlcvMapper.class);
         AutoTradeProperties props = new AutoTradeProperties(true, BigDecimal.valueOf(3_000_000), 5,
                 BigDecimal.valueOf(600_000), 15.0, 10.0, 10.0, "", "0 * * * * *", 20, 1.0, 1.5, 30.0, 3.0, 200.0,
-                BigDecimal.valueOf(300_000_000), BigDecimal.valueOf(200_000), 20, 2, 30, 60,
+                BigDecimal.valueOf(300_000_000), BigDecimal.valueOf(200_000), 20, 2, 30, 60, 8.0,
                 new AutoTradeProperties.Gate(20));
         service = new CandidateDiscoveryService(newsMapper, candidateMapper, universeMapper, newsFadeDetector,
                 dailyCollector, props, valuationClient, dailyMapper);
