@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -33,6 +34,7 @@ class CandidateDiscoveryServiceTest {
     private DailyCollector dailyCollector;
     private ValuationClient valuationClient;
     private DailyOhlcvMapper dailyMapper;
+    private AutoTradePositionMapper positionMapper;
     private CandidateDiscoveryService service;
 
     @BeforeEach
@@ -44,12 +46,13 @@ class CandidateDiscoveryServiceTest {
         dailyCollector = mock(DailyCollector.class);
         valuationClient = mock(ValuationClient.class);
         dailyMapper = mock(DailyOhlcvMapper.class);
+        positionMapper = mock(AutoTradePositionMapper.class);
         AutoTradeProperties props = new AutoTradeProperties(true, BigDecimal.valueOf(3_000_000), 5,
                 BigDecimal.valueOf(600_000), 15.0, 10.0, 10.0, "", "0 * * * * *", 20, 1.0, 1.5, 30.0, 3.0, 200.0,
-                BigDecimal.valueOf(300_000_000), BigDecimal.valueOf(200_000), 20, 2, 30, 60, 8.0,
+                BigDecimal.valueOf(300_000_000), BigDecimal.valueOf(200_000), 20, 2, 30, 60, 30, 8.0,
                 new AutoTradeProperties.Gate(20));
         service = new CandidateDiscoveryService(newsMapper, candidateMapper, universeMapper, newsFadeDetector,
-                dailyCollector, props, valuationClient, dailyMapper);
+                dailyCollector, props, valuationClient, dailyMapper, positionMapper);
         when(candidateMapper.findActive()).thenReturn(List.of());
     }
 
@@ -284,6 +287,67 @@ class CandidateDiscoveryServiceTest {
         service.refresh();
 
         verify(candidateMapper).deactivate("SMCI");
+    }
+
+    @Test
+    void same_theme_as_todays_stop_exit_is_detected() {
+        // #840 — 066570 실사례 재현: "전자부품" 테마로 샀다가 오늘 손절, 같은 "전자부품" 테마의
+        // 다른 헤드라인으로 재진입 시도 → 같은 스토리로 판정.
+        AutoTradePosition stopped = stoppedPosition("066570", LocalDateTime.now().minusHours(20),
+                LocalDateTime.now().minusMinutes(10));
+        when(positionMapper.findLastStopExited("066570")).thenReturn(stopped);
+        when(newsMapper.forSymbolBetween(eq("066570"), any(), any()))
+                .thenReturn(List.of(newsWith("066570:S5,전자부품:S4")));
+        when(newsMapper.active("066570", 5)).thenReturn(List.of(newsWith("066570:S5,전자부품:S4")));
+
+        assertThat(service.isSameThemeAsRecentStopExit("066570", "KR")).isTrue();
+    }
+
+    @Test
+    void different_theme_after_stop_exit_is_not_blocked() {
+        AutoTradePosition stopped = stoppedPosition("066570", LocalDateTime.now().minusHours(20),
+                LocalDateTime.now().minusMinutes(10));
+        when(positionMapper.findLastStopExited("066570")).thenReturn(stopped);
+        when(newsMapper.forSymbolBetween(eq("066570"), any(), any()))
+                .thenReturn(List.of(newsWith("066570:S5,전자부품:S4")));
+        when(newsMapper.active("066570", 5)).thenReturn(List.of(newsWith("066570:S5,자동차:S4")));
+
+        assertThat(service.isSameThemeAsRecentStopExit("066570", "KR")).isFalse();
+    }
+
+    @Test
+    void stop_exit_from_a_prior_day_is_not_compared() {
+        AutoTradePosition stopped = stoppedPosition("066570", LocalDateTime.now().minusDays(1).minusHours(20),
+                LocalDateTime.now().minusDays(1));
+        when(positionMapper.findLastStopExited("066570")).thenReturn(stopped);
+
+        assertThat(service.isSameThemeAsRecentStopExit("066570", "KR")).isFalse();
+        verify(newsMapper, never()).forSymbolBetween(any(), any(), any());
+    }
+
+    @Test
+    void no_theme_tags_found_for_stopped_position_is_fail_open() {
+        AutoTradePosition stopped = stoppedPosition("066570", LocalDateTime.now().minusHours(20),
+                LocalDateTime.now().minusMinutes(10));
+        when(positionMapper.findLastStopExited("066570")).thenReturn(stopped);
+        when(newsMapper.forSymbolBetween(eq("066570"), any(), any())).thenReturn(List.of());
+
+        assertThat(service.isSameThemeAsRecentStopExit("066570", "KR")).isFalse();
+    }
+
+    private static AutoTradePosition stoppedPosition(String symbol, LocalDateTime entryAt, LocalDateTime exitAt) {
+        AutoTradePosition p = new AutoTradePosition();
+        p.setSymbol(symbol);
+        p.setEntryAt(entryAt);
+        p.setExitAt(exitAt);
+        p.setExitReason("TRAIL_STOP");
+        return p;
+    }
+
+    private static StockNews newsWith(String sentiment) {
+        StockNews n = new StockNews();
+        n.setSentiment(sentiment);
+        return n;
     }
 
     @Test

@@ -59,7 +59,7 @@ class AutoTradeSchedulerTest {
         return new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI",
                 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000),
-                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 8.0, new AutoTradeProperties.Gate(35));
+                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 8.0, new AutoTradeProperties.Gate(35));
     }
 
     @BeforeEach
@@ -222,6 +222,53 @@ class AutoTradeSchedulerTest {
         when(catalystDetector.hasRecentCatalyst(SYMBOL)).thenReturn(true);
         when(priceCache.get(List.of(SYMBOL)))
                 .thenReturn(List.of(new TossPrice(SYMBOL, "110000", "KRW", null)));
+
+        scheduler.tick();
+
+        verify(orderExecutor).buy(eq(SYMBOL), eq("KR"), any(), any(), any());
+    }
+
+    @Test
+    void buy_is_blocked_shortly_after_a_stop_loss_exit_even_with_fresh_catalyst() {
+        // #839 실사고 재발 방지(066570, 2026-10-07): 트레일스탑 매도 7초 뒤 더 비싼 가격으로
+        // 재매수해 확정손실이 났음 — 완전히 새로운 신선한 호재(hasNewsFaded=false)여도 손절
+        // 쿨다운(30분) 중이면 매수하지 않는다.
+        AutoTradeCandidate c = new AutoTradeCandidate();
+        c.setSymbol(SYMBOL);
+        c.setMarket("KR");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(candidateMapper.findActive()).thenReturn(List.of(c));
+        when(positionMapper.lastStopExitAt(SYMBOL)).thenReturn(LocalDateTime.now().minusSeconds(7));
+
+        scheduler.tick();
+
+        verify(orderExecutor, org.mockito.Mockito.never()).buy(any(), any(), any(), any(), any());
+        // 손절 쿨다운 자체로 막히므로, 그 뒤 단계(뉴스판정 등)는 아예 평가되지 않아야 한다.
+        verify(newsFadeDetector, org.mockito.Mockito.never()).hasNewsFaded(any());
+    }
+
+    @Test
+    void buy_proceeds_once_stop_loss_cooldown_elapsed() {
+        AutoTradeCandidate c = new AutoTradeCandidate();
+        c.setSymbol(SYMBOL);
+        c.setMarket("KR");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(positionMapper.findAll()).thenReturn(List.of());
+        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(candidateMapper.findActive()).thenReturn(List.of(c));
+        when(positionMapper.lastStopExitAt(SYMBOL)).thenReturn(LocalDateTime.now().minusMinutes(31));
+        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
+        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
+        when(valuationClient.getValuation(SYMBOL, "KR"))
+                .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
+        when(catalystDetector.hasRecentCatalyst(SYMBOL)).thenReturn(false);
+        when(priceCache.get(List.of(SYMBOL)))
+                .thenReturn(List.of(new TossPrice(SYMBOL, "102000", "KRW", null)));
 
         scheduler.tick();
 

@@ -84,4 +84,12 @@
         WHERE status = 'ANALYZED' AND expires_at &lt;= SYSTIMESTAMP
     </update>
 
+    <select id="forSymbolBetween" resultMap="newsMap">
+        SELECT id, ext_id, title, url, source, published_at, fetched_at, status,
+               targets, sentiment, rationale, kind, model, expires_at
+        FROM stock_news
+        WHERE ',' || targets || ',' LIKE '%,' || #{symbol} || ',%'
+          AND COALESCE(published_at, fetched_at) BETWEEN #{from} AND #{to}
+    </select>
+
 </mapper>

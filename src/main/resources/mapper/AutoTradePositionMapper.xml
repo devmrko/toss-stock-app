@@ -34,6 +34,20 @@
         WHERE symbol = #{symbol} AND status = 'EXITED' AND exit_reason = 'NEWS_FADED'
     </select>
 
+    <select id="lastStopExitAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(exit_at) FROM auto_trade_position
+        WHERE symbol = #{symbol} AND status = 'EXITED' AND exit_reason IN ('HARD_STOP', 'TRAIL_STOP')
+    </select>
+
+    <select id="findLastStopExited" resultType="com.cloudhandson.tossstock.autotrade.AutoTradePosition">
+        SELECT id, symbol, market, status, entry_price, entry_qty, entry_at, peak_price,
+               budget_allocated, exit_price, exit_reason, exit_at, dry_run, created_at
+        FROM auto_trade_position
+        WHERE symbol = #{symbol} AND status = 'EXITED' AND exit_reason IN ('HARD_STOP', 'TRAIL_STOP')
+        ORDER BY exit_at DESC
+        FETCH FIRST 1 ROWS ONLY
+    </select>
+
     <!-- Oracle IDENTITY 키 반환: keyColumn 명시 필수(미지정 시 ROWID 반환 → ORA-17132) -->
     <insert id="insert" parameterType="com.cloudhandson.tossstock.autotrade.AutoTradePosition"
             useGeneratedKeys="true" keyProperty="id" keyColumn="ID">

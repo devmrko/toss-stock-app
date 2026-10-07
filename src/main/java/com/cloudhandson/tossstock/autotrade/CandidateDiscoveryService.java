@@ -48,11 +48,13 @@ public class CandidateDiscoveryService {
     private final AutoTradeProperties props;
     private final ValuationClient valuationClient;
     private final DailyOhlcvMapper dailyMapper;
+    private final AutoTradePositionMapper positionMapper;
 
     public CandidateDiscoveryService(StockNewsMapper newsMapper, AutoTradeCandidateMapper candidateMapper,
                                       UniverseMapper universeMapper, NewsFadeDetector newsFadeDetector,
                                       DailyCollector dailyCollector, AutoTradeProperties props,
-                                      ValuationClient valuationClient, DailyOhlcvMapper dailyMapper) {
+                                      ValuationClient valuationClient, DailyOhlcvMapper dailyMapper,
+                                      AutoTradePositionMapper positionMapper) {
         this.newsMapper = newsMapper;
         this.candidateMapper = candidateMapper;
         this.universeMapper = universeMapper;
@@ -61,6 +63,7 @@ public class CandidateDiscoveryService {
         this.props = props;
         this.valuationClient = valuationClient;
         this.dailyMapper = dailyMapper;
+        this.positionMapper = positionMapper;
     }
 
     @Scheduled(cron = "${auto-trade.discovery-cron:0 */15 * * * *}", zone = "Asia/Seoul")
@@ -144,6 +147,38 @@ public class CandidateDiscoveryService {
         }
         Valuation valuation = valuationClient.getValuation(symbol, market);
         return ValuationChecker.isUndervalued(valuation, props.maxPer(), props.maxPbr());
+    }
+
+    /**
+     * 오늘 하드/트레일스탑으로 손절된 포지션과 "같은 테마"의 뉴스로 재진입하려는 건지(#840,
+     * 2026-10-07). 066570 실사례: "AI 데이터센터 냉각 계약"(테마: 전자부품)으로 사서 손절된 뒤,
+     * "3분기 영업이익 4조 돌파"(테마: 전자부품)로 7초 만에 재매수 — 헤드라인은 다르지만 같은
+     * 테마 태그를 공유하는 같은 스토리의 연장. #839(시간 쿨다운)로는 못 잡는 패턴.
+     * 손절이 오늘이 아니거나, 양쪽 테마 태그를 못 찾으면(데이터 부족) false(fail-open, §3).
+     */
+    boolean isSameThemeAsRecentStopExit(String symbol, String market) {
+        AutoTradePosition lastStopped = positionMapper.findLastStopExited(symbol);
+        if (lastStopped == null || lastStopped.getExitAt() == null
+                || !lastStopped.getExitAt().toLocalDate().equals(LocalDate.now())) {
+            return false; // 오늘 손절된 게 아니면 테마 비교 자체를 안 함(과차단 방지)
+        }
+        Set<String> pastThemes = themeTagsFor(symbol,
+                newsMapper.forSymbolBetween(symbol, lastStopped.getEntryAt().minusHours(LOOKBACK_HOURS),
+                        lastStopped.getExitAt()));
+        if (pastThemes.isEmpty()) {
+            return false; // 그 포지션을 만든 뉴스의 테마를 못 찾음 — fail-open
+        }
+        Set<String> currentThemes = themeTagsFor(symbol, newsMapper.active(symbol, 5));
+        return currentThemes.stream().anyMatch(pastThemes::contains);
+    }
+
+    /** sentiment CSV들에서 종목코드/MARKET 키를 뺀 나머지(섹터/테마) 키만 추출. */
+    private static Set<String> themeTagsFor(String symbol, List<StockNews> news) {
+        List<String> sentiments = news.stream().map(StockNews::getSentiment).toList();
+        Set<String> themes = new HashSet<>(NewsSignals.aggregate(sentiments).keySet());
+        themes.remove(symbol);
+        themes.remove("MARKET");
+        return themes;
     }
 
     /** 등록(created_at) 후 candidate-max-retention-days 이내인지. 등록시각 불명이면 false(좀비 후보 방지). */

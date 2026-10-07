@@ -183,6 +183,15 @@ public class AutoTradeScheduler {
             if (!MarketHours.isOpen(c.getMarket(), LocalDateTime.now())) {
                 continue; // 그 시장이 지금 닫혀있음(KST 기준, 한국/미국 각각 판단)
             }
+            if (recentlyExitedViaStop(c.getSymbol())) {
+                continue; // #839 실사고 수정 — 손절 직후 즉시 재진입하면 더 비싼 가격에 되사는
+                          // 확정손실 왕복이 날 수 있음(066570 실사례, 7초 후 212,000→212,500
+                          // 재매수). 뉴스/촉매 신선도와 무관하게 전체 매수 경로에 적용.
+            }
+            if (candidateDiscovery.isSameThemeAsRecentStopExit(c.getSymbol(), c.getMarket())) {
+                continue; // #840 — 오늘 손절된 포지션과 같은 테마(같은 스토리의 다음 기사)로
+                          // 재진입하려는 경우, #839 쿨다운이 끝났어도 당일은 계속 차단.
+            }
             if (newsFadeDetector.hasNewsFaded(c.getSymbol())) {
                 if (!candidateDiscovery.retainDespiteNewsFade(c)) {
                     continue; // 호재(S4↑) 없고, 저평가+상대강세 예외(#828)도 아님
@@ -239,6 +248,18 @@ public class AutoTradeScheduler {
         LocalDateTime lastExit = positionMapper.lastNewsFadedExitAt(symbol);
         return lastExit != null
                 && lastExit.isAfter(LocalDateTime.now().minusMinutes(props.newsFadedCooldownMinutes()));
+    }
+
+    /**
+     * 하드/트레일스탑으로 손절된 지 stop-exit-cooldown-minutes 이내인지(#839 실사고, 2026-10-07).
+     * 066570 실사례: 트레일스탑 매도(212,000) 7초 뒤 더 비싼 가격(212,500)으로 재매수해 가격차만으로
+     * 확정손실. 새 촉매가 진짜로 신선해도 손절 직후 즉시 재진입은 수수료·세금(별도 QA 발견, #839)까지
+     * 감안하면 더 불리하므로, 뉴스/촉매 신선도와 무관하게 전체 매수 경로 앞단에서 차단한다.
+     */
+    private boolean recentlyExitedViaStop(String symbol) {
+        LocalDateTime lastExit = positionMapper.lastStopExitAt(symbol);
+        return lastExit != null
+                && lastExit.isAfter(LocalDateTime.now().minusMinutes(props.stopExitCooldownMinutes()));
     }
 
     private String buyRationale(AutoTradeCandidate c, List<DailyOhlcv> recent, Valuation valuation,

@@ -30,4 +30,16 @@ public interface AutoTradePositionMapper {
      * QA, 2026-10-07)에 쓴다. 다른 사유(하드/트레일스탑 등)로 청산된 건은 대상이 아님.
      */
     LocalDateTime lastNewsFadedExitAt(@Param("symbol") String symbol);
+
+    /**
+     * 해당 종목이 가장 최근 HARD_STOP 또는 TRAIL_STOP으로 청산된 시각(없으면 null) — 손절 후
+     * 즉시 재진입 쿨다운(#839, 2026-10-07)에 쓴다.
+     */
+    LocalDateTime lastStopExitAt(@Param("symbol") String symbol);
+
+    /**
+     * 가장 최근 HARD_STOP/TRAIL_STOP으로 청산된 포지션 1건(없으면 null) — 그 보유기간의
+     * 활성 뉴스 테마 태그를 조회해 동일테마 재진입 판정(#840, 2026-10-07)에 쓴다.
+     */
+    AutoTradePosition findLastStopExited(@Param("symbol") String symbol);
 }
