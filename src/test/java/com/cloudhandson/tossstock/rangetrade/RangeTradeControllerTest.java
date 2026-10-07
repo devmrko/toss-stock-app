@@ -93,6 +93,7 @@ class RangeTradeControllerTest {
         when(positionMapper.countLoss()).thenReturn(1);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.valueOf(5000));
         when(positionMapper.realizedFeesTotal()).thenReturn(BigDecimal.valueOf(900));
+        when(positionMapper.dailyRealizedSummary()).thenReturn(List.of());
 
         Map<String, Object> result = controller.status();
 
@@ -104,6 +105,7 @@ class RangeTradeControllerTest {
         assertThat(summary.get("realizedPnl")).isEqualTo(BigDecimal.valueOf(5000));
         assertThat(summary.get("totalFees")).isEqualTo(BigDecimal.valueOf(900));
         assertThat(summary.get("netRealizedPnl")).isEqualTo(BigDecimal.valueOf(4100));
+        assertThat(summary.get("dailyBreakdown")).isEqualTo(List.of());
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.cloudhandson.tossstock.rangetrade;
 
+import com.cloudhandson.tossstock.autotrade.DailyRealizedPnl;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -41,4 +42,7 @@ public interface RangeTradePositionMapper {
      * 수정 — 종목 전체 블랭킷 합산 대신 각 포지션 자신의 entry_at/exit_at으로 짝지은 로그만 합산).
      */
     BigDecimal realizedFeesTotal();
+
+    /** 날짜별(exit_at 기준) 실현손익 집계(#851, #808과 동일) — 토스 앱 일별 보기와 직접 대조용. */
+    List<DailyRealizedPnl> dailyRealizedSummary();
 }

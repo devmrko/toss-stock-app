@@ -106,6 +106,7 @@ public class AutoTradeController {
         s.put("realizedPnl", priceOnlyPnl);
         s.put("totalFees", totalFees);
         s.put("netRealizedPnl", priceOnlyPnl.subtract(totalFees));
+        s.put("dailyBreakdown", positionMapper.dailyRealizedSummary());
         return s;
     }
 

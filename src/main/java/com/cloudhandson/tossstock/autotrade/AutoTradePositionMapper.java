@@ -68,4 +68,12 @@ public interface AutoTradePositionMapper {
      * 포지션의 매수 수수료는 포함되지 않는다.
      */
     BigDecimal realizedFeesTotal();
+
+    /**
+     * 날짜별(exit_at 기준) 실현손익 집계(#851) — 토스 앱의 일별 보기와 직접 대조하기 위함.
+     * 전체 누적 합계만 보여주면 "오늘 하루" 숫자와 비교할 때 다른 날짜 거래가 섞여 안 맞아
+     * 보이는 혼동이 생긴다(2026-10-08 실사례: 10/2 거래가 섞여 10/7 단독 합계와 어긋나 보임).
+     * 날짜 내림차순.
+     */
+    List<DailyRealizedPnl> dailyRealizedSummary();
 }

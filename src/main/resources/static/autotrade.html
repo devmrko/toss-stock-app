@@ -64,7 +64,9 @@
       <h2>#808 모멘텀 엔진</h2>
       <div class="badges" id="momentum-badges"></div>
       <div class="summary" id="momentum-summary"></div>
-      <h3 style="font-size:13px;color:var(--muted);margin:0 0 6px;">보유종목</h3>
+      <h3 style="font-size:13px;color:var(--muted);margin:0 0 6px;">날짜별 실현손익(토스 앱과 대조용)</h3>
+      <div class="tblwrap"><table id="momentum-daily"><thead></thead><tbody></tbody></table></div>
+      <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;">보유종목</h3>
       <div class="tblwrap"><table id="momentum-holdings"><thead></thead><tbody></tbody></table></div>
       <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;">총 매매(시간순)</h3>
       <div class="tblwrap"><table id="momentum-logs"><thead></thead><tbody></tbody></table></div>
@@ -75,7 +77,9 @@
       <h2>#818 레인지 스윙매매</h2>
       <div class="badges" id="range-badges"></div>
       <div class="summary" id="range-summary"></div>
-      <h3 style="font-size:13px;color:var(--muted);margin:0 0 6px;">보유종목</h3>
+      <h3 style="font-size:13px;color:var(--muted);margin:0 0 6px;">날짜별 실현손익(토스 앱과 대조용)</h3>
+      <div class="tblwrap"><table id="range-daily"><thead></thead><tbody></tbody></table></div>
+      <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;">보유종목</h3>
       <div class="tblwrap"><table id="range-holdings"><thead></thead><tbody></tbody></table></div>
       <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;">총 매매(시간순)</h3>
       <div class="tblwrap"><table id="range-logs"><thead></thead><tbody></tbody></table></div>
@@ -107,6 +111,25 @@
         <div class="scard"><div class="lbl">누적 실현손익(수수료 반영)</div><div class="val ${pnlClass(sm.netRealizedPnl)}">${fmtNum(sm.netRealizedPnl)}원</div></div>
         <div class="scard"><div class="lbl">↳ 가격차만(참고)</div><div class="val dimv">${fmtNum(sm.realizedPnl)}원</div></div>
         <div class="scard"><div class="lbl">누적 수수료+세금</div><div class="val dimv">${fmtNum(sm.totalFees)}원</div></div>`;
+    }
+
+    function renderDaily(table, rows) {
+      if (!rows || rows.length === 0) {
+        table.innerHTML = '<tbody><tr><td class="empty" colspan="5">실현손익 없음</td></tr></tbody>';
+        return;
+      }
+      table.innerHTML = `
+        <thead><tr>
+          <th>날짜</th><th>매매건수</th><th>가격차만</th><th>수수료+세금</th><th>순손익</th>
+        </tr></thead>
+        <tbody>${rows.map(r => `
+          <tr>
+            <td>${r.exitDate}</td>
+            <td class="num">${fmtNum(r.trades)}건</td>
+            <td class="num dimv">${fmtNum(r.grossPnl)}</td>
+            <td class="num dimv">${fmtNum(r.fees)}</td>
+            <td class="num ${pnlClass(r.netPnl)}">${fmtNum(r.netPnl)}원</td>
+          </tr>`).join('')}</tbody>`;
     }
 
     function renderHoldings(table, rows, showReason) {
@@ -205,6 +228,7 @@
         const s = await res.json();
         renderBadges(document.getElementById(prefix + '-badges'), s);
         renderSummary(document.getElementById(prefix + '-summary'), s.summary);
+        renderDaily(document.getElementById(prefix + '-daily'), s.summary ? s.summary.dailyBreakdown : null);
         renderHoldings(document.getElementById(prefix + '-holdings'), s.holdingsView, showReason);
       } catch (e) {
         document.getElementById(prefix + '-badges').innerHTML =

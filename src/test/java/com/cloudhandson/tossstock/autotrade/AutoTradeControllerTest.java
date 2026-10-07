@@ -115,6 +115,9 @@ class AutoTradeControllerTest {
         when(positionMapper.countLoss()).thenReturn(5);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.valueOf(-24950));
         when(positionMapper.realizedFeesTotal()).thenReturn(BigDecimal.valueOf(3200));
+        DailyRealizedPnl daily = new DailyRealizedPnl("2026-10-07", 12, BigDecimal.valueOf(-24950),
+                BigDecimal.valueOf(3200), BigDecimal.valueOf(-28150));
+        when(positionMapper.dailyRealizedSummary()).thenReturn(List.of(daily));
 
         Map<String, Object> result = controller.status();
 
@@ -126,6 +129,9 @@ class AutoTradeControllerTest {
         assertThat(summary.get("realizedPnl")).isEqualTo(BigDecimal.valueOf(-24950));
         assertThat(summary.get("totalFees")).isEqualTo(BigDecimal.valueOf(3200));
         assertThat(summary.get("netRealizedPnl")).isEqualTo(BigDecimal.valueOf(-28150));
+        @SuppressWarnings("unchecked")
+        List<DailyRealizedPnl> dailyBreakdown = (List<DailyRealizedPnl>) summary.get("dailyBreakdown");
+        assertThat(dailyBreakdown).containsExactly(daily);
     }
 
     @Test
