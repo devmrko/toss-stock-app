@@ -58,4 +58,14 @@ public interface AutoTradePositionMapper {
 
     /** exit_price &lt; entry_price 인 EXITED 건수(#849 요약, 패) — 본전(동일가)은 승/패 어느 쪽에도 안 들어감. */
     int countLoss();
+
+    /**
+     * EXITED 포지션 각각의 매수/매도 레그 수수료+세금 합계(2026-10-08 정정) — 종목 전체의
+     * 성공 주문로그를 블랭킷 합산하면 "아직 보유 중인 재진입분의 매수 수수료"까지 섞여 들어가
+     * 실현손익이 실제보다 더 나쁘게 보이는 버그가 있었다(053800/066570 실측: 사용자 토스 앱
+     * 숫자와 59~81원 어긋남 — 둘 다 재진입 매수 1건의 수수료만큼). 각 EXITED 포지션의
+     * entry_at/exit_at으로 그 포지션 "자신의" BUY/SELL 로그만 짝지어 합산 — 열려있는
+     * 포지션의 매수 수수료는 포함되지 않는다.
+     */
+    BigDecimal realizedFeesTotal();
 }

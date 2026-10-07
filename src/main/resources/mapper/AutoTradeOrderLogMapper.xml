@@ -26,12 +26,6 @@
         SELECT COUNT(*) FROM auto_trade_order_log
     </select>
 
-    <select id="totalFees" resultType="java.math.BigDecimal">
-        SELECT COALESCE(SUM(COALESCE(commission, 0) + COALESCE(tax, 0)), 0)
-        FROM auto_trade_order_log
-        WHERE success = 1
-    </select>
-
     <select id="findLastBuySuccess" resultType="com.cloudhandson.tossstock.autotrade.AutoTradeOrderLog">
         SELECT id, symbol, side, reason, dry_run, requested_qty, requested_price, toss_order_id,
                success, message, commission, tax, entry_price, peak_price, created_at

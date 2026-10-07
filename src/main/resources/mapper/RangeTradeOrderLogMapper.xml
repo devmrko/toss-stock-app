@@ -25,10 +25,4 @@
         SELECT COUNT(*) FROM range_trade_order_log
     </select>
 
-    <select id="totalFees" resultType="java.math.BigDecimal">
-        SELECT COALESCE(SUM(COALESCE(commission, 0) + COALESCE(tax, 0)), 0)
-        FROM range_trade_order_log
-        WHERE success = 1
-    </select>
-
 </mapper>

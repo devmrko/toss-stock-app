@@ -45,7 +45,7 @@ class AutoTradeControllerTest {
         when(positionMapper.countWin()).thenReturn(0);
         when(positionMapper.countLoss()).thenReturn(0);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO);
-        when(orderLogMapper.totalFees()).thenReturn(BigDecimal.ZERO);
+        when(positionMapper.realizedFeesTotal()).thenReturn(BigDecimal.ZERO);
         controller = new AutoTradeController(scheduler, discoveryService, stateMapper, positionMapper,
                 candidateMapper, orderLogMapper, priceCache, stockInfoCache);
     }
@@ -114,7 +114,7 @@ class AutoTradeControllerTest {
         when(positionMapper.countWin()).thenReturn(7);
         when(positionMapper.countLoss()).thenReturn(5);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.valueOf(-24950));
-        when(orderLogMapper.totalFees()).thenReturn(BigDecimal.valueOf(3200));
+        when(positionMapper.realizedFeesTotal()).thenReturn(BigDecimal.valueOf(3200));
 
         Map<String, Object> result = controller.status();
 

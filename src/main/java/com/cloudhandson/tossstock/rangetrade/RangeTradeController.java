@@ -61,13 +61,14 @@ public class RangeTradeController {
     }
 
     /**
-     * 총 매매건수/승패/누적손익/누적수수료(#849, 2026-10-08 정정) — EXITED 포지션·성공
-     * 주문로그 기준(드라이런 포함). {@code realizedPnl}은 가격차만, {@code netRealizedPnl}이
-     * 거기서 누적 수수료+세금을 뺀 값(#808 AutoTradeController와 동일 정정).
+     * 총 매매건수/승패/누적손익/누적수수료(#849, 2026-10-08 2차 정정) — EXITED 포지션 기준
+     * (드라이런 포함). {@code realizedPnl}은 가격차만, {@code netRealizedPnl}이 거기서 누적
+     * 수수료+세금을 뺀 값. {@code totalFees}는 {@link RangeTradePositionMapper#realizedFeesTotal()}
+     * 사용(종목 전체 블랭킷 합산 버그 수정, #808 AutoTradeController와 동일).
      */
     private Map<String, Object> summary() {
         BigDecimal priceOnlyPnl = positionMapper.realizedPnlTotal();
-        BigDecimal totalFees = orderLogMapper.totalFees();
+        BigDecimal totalFees = positionMapper.realizedFeesTotal();
         Map<String, Object> s = new HashMap<>();
         s.put("totalTrades", positionMapper.countExited());
         s.put("wins", positionMapper.countWin());

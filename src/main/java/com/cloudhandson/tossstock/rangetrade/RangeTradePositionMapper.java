@@ -35,4 +35,10 @@ public interface RangeTradePositionMapper {
 
     /** exit_price &lt; entry_price 인 EXITED 건수(#849 요약, 패) — 본전(동일가)은 승/패 어느 쪽에도 안 들어감. */
     int countLoss();
+
+    /**
+     * EXITED 포지션 각각의 매수/매도 레그 수수료+세금 합계(2026-10-08 정정, #808과 동일 버그
+     * 수정 — 종목 전체 블랭킷 합산 대신 각 포지션 자신의 entry_at/exit_at으로 짝지은 로그만 합산).
+     */
+    BigDecimal realizedFeesTotal();
 }

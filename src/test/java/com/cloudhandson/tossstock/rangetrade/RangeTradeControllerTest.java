@@ -38,7 +38,7 @@ class RangeTradeControllerTest {
         when(positionMapper.countWin()).thenReturn(0);
         when(positionMapper.countLoss()).thenReturn(0);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO);
-        when(orderLogMapper.totalFees()).thenReturn(BigDecimal.ZERO);
+        when(positionMapper.realizedFeesTotal()).thenReturn(BigDecimal.ZERO);
         controller = new RangeTradeController(stateMapper, positionMapper, orderLogMapper, priceCache, stockInfoCache);
     }
 
@@ -92,7 +92,7 @@ class RangeTradeControllerTest {
         when(positionMapper.countWin()).thenReturn(3);
         when(positionMapper.countLoss()).thenReturn(1);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.valueOf(5000));
-        when(orderLogMapper.totalFees()).thenReturn(BigDecimal.valueOf(900));
+        when(positionMapper.realizedFeesTotal()).thenReturn(BigDecimal.valueOf(900));
 
         Map<String, Object> result = controller.status();
 
