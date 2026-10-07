@@ -59,7 +59,7 @@ class AutoTradeSchedulerTest {
         return new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI",
                 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000),
-                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 8.0, new AutoTradeProperties.Gate(35));
+                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 8.0, 3.0, new AutoTradeProperties.Gate(35));
     }
 
     @BeforeEach

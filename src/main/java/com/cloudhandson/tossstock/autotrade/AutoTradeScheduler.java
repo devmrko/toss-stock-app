@@ -213,14 +213,21 @@ public class AutoTradeScheduler {
             Valuation valuation = valuationClient.getValuation(c.getSymbol(), c.getMarket());
             boolean cheap = ValuationChecker.isUndervalued(valuation, props.maxPer(), props.maxPbr());
             boolean rerateCatalyst = capitalReturnCatalystDetector.hasRecentCatalyst(c.getSymbol());
+            // #855(2026-10-08 실측): 촉매 키워드만으로 저평가·급등 필터를 통째로 면제하던 구멍 차단.
+            // 포스코퓨처엠(PER 392.49)·삼성SDI(PER 데이터없음)가 "6조 수주" 키워드 하나로 전 필터를
+            // 면제받고 매수돼 손실. 이미 기대가 극단적으로 반영된 가격엔 어떤 촉매도 추가 상승을
+            // 정당화하지 못한다고 보고, 면제에 밸류에이션 상한(저평가 기준의 N배)을 건다.
+            boolean catalystAllowed = rerateCatalyst && ValuationChecker.withinCatalystBound(
+                    valuation, props.maxPer() * props.catalystValuationMultiple(),
+                    props.maxPbr() * props.catalystValuationMultiple());
             // #838(2026-10-07, 안랩/053800 실사례): 당일 급등이 실적직결 촉매 없는 순수 테마성
             // 반응이면 단기 트레이더 쏠림→되돌림 위험이 커서 당일 매수는 보류한다(날짜 추적 없이
             // "당일 변동"만 봄 — 다음 거래일엔 자연히 재평가됨). 신규 I/O 없이 이미 계산된
             // recent/rerateCatalyst만 재사용.
-            if (PopularityChecker.priceMovePct(recent) >= props.extremeMovePct() && !rerateCatalyst) {
+            if (PopularityChecker.priceMovePct(recent) >= props.extremeMovePct() && !catalystAllowed) {
                 continue; // 테마성 과열(실적직결 촉매 없는 당일 급등) — 오늘은 매수 보류
             }
-            if (!cheap && !rerateCatalyst) {
+            if (!cheap && !catalystAllowed) {
                 continue; // 이미 싼 것도 아니고, 자본배분(재평가) 촉매도 없음 — 원칙 §2/§3-7 둘 다 미달
             }
             FundamentalScore score = fundamentalScore(c, recent);

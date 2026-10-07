@@ -35,6 +35,7 @@ public record AutoTradeProperties(
         int newsFadedCooldownMinutes,
         int stopExitCooldownMinutes,
         double extremeMovePct,
+        double catalystValuationMultiple,
         @NestedConfigurationProperty Gate gate) {
 
     public boolean alertsEnabled() {
