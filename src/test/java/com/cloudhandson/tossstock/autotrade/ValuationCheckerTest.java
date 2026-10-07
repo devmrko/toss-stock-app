@@ -85,4 +85,29 @@ class ValuationCheckerTest {
         Valuation v = new Valuation(BigDecimal.valueOf(-12.0), BigDecimal.valueOf(1.0));
         assertThat(ValuationChecker.withinCatalystBound(v, 90.0, 9.0)).isFalse();
     }
+
+    // --- #857 회귀수정: 미국은 PBR 상한 미적용(pbrBound <= 0) ---
+
+    @Test
+    void PBR상한_미적용이면_높은PBR도_PER만_보고_허용() {
+        // 마이크론 실측(PBR 11.65) — 미국 대형주는 자사주매입으로 장부가가 축소돼 구조적으로 높음
+        Valuation v = new Valuation(BigDecimal.valueOf(25.0), BigDecimal.valueOf(11.65));
+        assertThat(ValuationChecker.withinCatalystBound(v, 90.0, 0)).isTrue();
+        assertThat(ValuationChecker.withinCatalystBound(v, 90.0, 9.0)).isFalse(); // KR 기준이면 거부
+    }
+
+    @Test
+    void PBR상한_미적용이어도_PER초과면_거부() {
+        Valuation v = new Valuation(BigDecimal.valueOf(220.0), BigDecimal.valueOf(11.65));
+        assertThat(ValuationChecker.withinCatalystBound(v, 90.0, 0)).isFalse();
+    }
+
+    @Test
+    void PBR상한_미적용이면_PBR이_null이거나_음수여도_허용() {
+        // 자사주매입 과다로 자기자본이 음수인 경우가 실제로 있음
+        assertThat(ValuationChecker.withinCatalystBound(
+                new Valuation(BigDecimal.valueOf(30.0), null), 90.0, 0)).isTrue();
+        assertThat(ValuationChecker.withinCatalystBound(
+                new Valuation(BigDecimal.valueOf(30.0), BigDecimal.valueOf(-2.0)), 90.0, 0)).isTrue();
+    }
 }

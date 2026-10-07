@@ -217,9 +217,13 @@ public class AutoTradeScheduler {
             // 포스코퓨처엠(PER 392.49)·삼성SDI(PER 데이터없음)가 "6조 수주" 키워드 하나로 전 필터를
             // 면제받고 매수돼 손실. 이미 기대가 극단적으로 반영된 가격엔 어떤 촉매도 추가 상승을
             // 정당화하지 못한다고 보고, 면제에 밸류에이션 상한(저평가 기준의 N배)을 건다.
+            // #857: PBR 상한은 KR에만. 미국 대형주는 자사주매입으로 장부가가 축소돼 PBR이 구조적으로
+            // 높고(실측: 마이크론 11.65), 절대 PBR 상한은 이미 "미국주식 전면 차단"처럼 작동한 전력이
+            // 있다(CapitalReturnCatalystDetector 주석 2026-10-02) — 미국은 PER만 본다.
+            double catalystPbrBound = "US".equalsIgnoreCase(c.getMarket())
+                    ? 0 : props.maxPbr() * props.catalystValuationMultiple();
             boolean catalystAllowed = rerateCatalyst && ValuationChecker.withinCatalystBound(
-                    valuation, props.maxPer() * props.catalystValuationMultiple(),
-                    props.maxPbr() * props.catalystValuationMultiple());
+                    valuation, props.maxPer() * props.catalystValuationMultiple(), catalystPbrBound);
             // #838(2026-10-07, 안랩/053800 실사례): 당일 급등이 실적직결 촉매 없는 순수 테마성
             // 반응이면 단기 트레이더 쏠림→되돌림 위험이 커서 당일 매수는 보류한다(날짜 추적 없이
             // "당일 변동"만 봄 — 다음 거래일엔 자연히 재평가됨). 신규 I/O 없이 이미 계산된
