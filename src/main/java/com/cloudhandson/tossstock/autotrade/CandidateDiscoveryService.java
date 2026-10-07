@@ -126,10 +126,23 @@ public class CandidateDiscoveryService {
         if (!withinRetentionWindow(c.getCreatedAt())) {
             return false;
         }
-        if (!isRelativelyStrong(c)) {
+        return isCheapAndRelativelyStrong(c.getSymbol(), c.getMarket());
+    }
+
+    /**
+     * 저평가 AND 상대강세 — 후보 유지뿐 아니라(#828) 보유 중 포지션의 매도 판정(#834 QA 발견,
+     * 2026-10-07)에도 재사용한다. 2026-10-07 실사례: #828로 "뉴스 식었지만 저평가+상대강세"라서
+     * 산 종목을 바로 다음 틱에 AutoTradeScheduler.processHolding이 "뉴스 식음"을 이유로 팔아버리고,
+     * 판 직후 같은 조건으로 다시 사는 매수-매도 무한반복(259630, 44회 왕복, 실현손실 24,950원)이
+     * 실거래에서 발생 — 매수 게이트에만 예외를 넣고 매도 게이트에는 대칭적으로 반영하지 않은 버그.
+     * (candidate-max-retention-days 같은 "등록 후 경과일" 개념은 이미 보유 중인 포지션에는 적용할
+     * 대상이 없으므로 이 메서드엔 포함하지 않음 — 그건 retainDespiteNewsFade 쪽 책임으로 남김.)
+     */
+    boolean isCheapAndRelativelyStrong(String symbol, String market) {
+        if (!isRelativelyStrong(symbol, market)) {
             return false;
         }
-        Valuation valuation = valuationClient.getValuation(c.getSymbol(), c.getMarket());
+        Valuation valuation = valuationClient.getValuation(symbol, market);
         return ValuationChecker.isUndervalued(valuation, props.maxPer(), props.maxPbr());
     }
 
@@ -145,11 +158,11 @@ public class CandidateDiscoveryService {
      * SPY를 조회하면 항상 데이터 없음 — US만 {@link ValuationClient#getIndexReturnPct}(야후
      * 차트 API)로 대체. KR(069500)은 기존 경로(DB) 그대로, 실측상 정상 작동.
      */
-    private boolean isRelativelyStrong(AutoTradeCandidate c) {
+    private boolean isRelativelyStrong(String symbol, String market) {
         LocalDate from = LocalDate.now().minusDays(props.relativeStrengthWindowDays() + 10L);
-        List<DailyOhlcv> stockWindow = dailyMapper.recentForSymbols(List.of(c.getSymbol()), from);
+        List<DailyOhlcv> stockWindow = dailyMapper.recentForSymbols(List.of(symbol), from);
         Double stockReturn = RelativeStrengthChecker.pctReturn(stockWindow);
-        Double indexReturn = "US".equalsIgnoreCase(c.getMarket())
+        Double indexReturn = "US".equalsIgnoreCase(market)
                 ? valuationClient.getIndexReturnPct("SPY", props.relativeStrengthWindowDays())
                 : RelativeStrengthChecker.pctReturn(dailyMapper.recentForSymbols(List.of("069500"), from));
         return stockReturn != null && indexReturn != null

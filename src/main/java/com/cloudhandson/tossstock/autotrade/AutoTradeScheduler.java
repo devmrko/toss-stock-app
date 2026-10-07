@@ -117,7 +117,12 @@ public class AutoTradeScheduler {
 
         ExitReason exit = TrailingStopCalculator.decide(current, peak, p.getEntryPrice(),
                 props.hardStopPct(), props.trailStopPct());
-        if (exit == ExitReason.NONE && newsFadeDetector.hasNewsFaded(p.getSymbol())) {
+        // 2026-10-07 실사고 수정: #828로 "뉴스 식었지만 저평가+상대강세"라서 산 포지션을 바로 다음
+        // 틱에 "뉴스 식음"으로 또 팔아버리면, 판 직후 같은 조건으로 재매수돼 무한 매수-매도 반복으로
+        // 이어짐(259630 실사례, 44회 왕복/실현손실 24,950원) — 매수 게이트(#828)에만 넣은 예외를
+        // 매도 게이트에도 대칭으로 반영. 지금도 저평가+상대강세면 뉴스 소멸을 매도 이유로 안 본다.
+        if (exit == ExitReason.NONE && newsFadeDetector.hasNewsFaded(p.getSymbol())
+                && !candidateDiscovery.isCheapAndRelativelyStrong(p.getSymbol(), p.getMarket())) {
             exit = ExitReason.NEWS_FADED;
         }
         if (exit != ExitReason.NONE) {
