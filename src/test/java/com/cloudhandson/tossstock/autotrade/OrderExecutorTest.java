@@ -37,7 +37,7 @@ class OrderExecutorTest {
     @BeforeEach
     void setUp() {
         props = new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
-                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 8.0, 3.0,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 3.0,
                 new AutoTradeProperties.Gate(35));
         stateMapper = mock(AutoTradeStateMapper.class);
         positionMapper = mock(AutoTradePositionMapper.class);
@@ -69,7 +69,7 @@ class OrderExecutorTest {
     @Test
     void db_dry_run_true_also_blocks_real_order_even_if_config_false() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
-                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 8.0, 3.0,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 3.0,
                 new AutoTradeProperties.Gate(35));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(true)); // DB가 true면 이중 안전장치로 드라이런
@@ -82,7 +82,7 @@ class OrderExecutorTest {
     @Test
     void both_false_places_real_order_exactly_once() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
-                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 8.0, 3.0,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 3.0,
                 new AutoTradeProperties.Gate(35));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(false));
@@ -102,7 +102,7 @@ class OrderExecutorTest {
         // #847(#841 정정, 2026-10-07): 토스 주문응답의 commission/tax는 실측 결과 항상 "0"이라
         // 쓸 수 없음이 확인됐음(13건) — TradingFeeCalculator로 체결금액×요율을 직접 계산해 저장.
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
-                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 8.0, 3.0,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 3.0,
                 new AutoTradeProperties.Gate(35));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(false));
@@ -135,7 +135,7 @@ class OrderExecutorTest {
         // 실제 체결된 매수가 포지션에 기록되지 않았고, "이미 보유 중" 체크가 안 돼 같은 종목을
         // 틱마다 반복 매수(012330, 5회)로 이어짐. 감사로그 실패와 무관하게 포지션은 기록돼야 함.
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
-                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 8.0, 3.0,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 3.0,
                 new AutoTradeProperties.Gate(35));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(false));
@@ -153,7 +153,7 @@ class OrderExecutorTest {
     @Test
     void sell_follows_position_dry_run_flag_not_global_state() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
-                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 8.0, 3.0,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 3.0,
                 new AutoTradeProperties.Gate(35));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(false));
@@ -184,7 +184,7 @@ class OrderExecutorTest {
     @Test
     void sell_log_message_carries_rationale_even_when_order_fails() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
-                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 8.0, 3.0,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 3.0,
                 new AutoTradeProperties.Gate(35));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(false));
@@ -224,7 +224,7 @@ class OrderExecutorTest {
 
     private OrderExecutor liveExecutor() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
-                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 8.0, 3.0,
+                BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 3.0,
                 new AutoTradeProperties.Gate(35));
         when(stateMapper.find()).thenReturn(stateWith(false));
         return new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);

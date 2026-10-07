@@ -224,12 +224,17 @@ public class AutoTradeScheduler {
                     ? 0 : props.maxPbr() * props.catalystValuationMultiple();
             boolean catalystAllowed = rerateCatalyst && ValuationChecker.withinCatalystBound(
                     valuation, props.maxPer() * props.catalystValuationMultiple(), catalystPbrBound);
-            // #838(2026-10-07, 안랩/053800 실사례): 당일 급등이 실적직결 촉매 없는 순수 테마성
-            // 반응이면 단기 트레이더 쏠림→되돌림 위험이 커서 당일 매수는 보류한다(날짜 추적 없이
-            // "당일 변동"만 봄 — 다음 거래일엔 자연히 재평가됨). 신규 I/O 없이 이미 계산된
-            // recent/rerateCatalyst만 재사용.
-            if (PopularityChecker.priceMovePct(recent) >= props.extremeMovePct() && !catalystAllowed) {
-                continue; // 테마성 과열(실적직결 촉매 없는 당일 급등) — 오늘은 매수 보류
+            BigDecimal current = currentPrice(c.getSymbol());
+            if (current == null) {
+                continue; // 콜드 캐시 — 다음 틱 재시도
+            }
+            // #838 취지(테마성 과열 추격매수 차단)를 #859로 측정 교정: 일봉 "당일 변동률"은 장중
+            // 판단 시점엔 어제 값이거나 미완성 바라 "지금 이미 올라있다"를 못 봤고, 기준선이
+            // 전일종가라 어제 급등한 종목은 다음날 음수로 보여 그대로 통과했다(실측 손실 6건 중
+            // 4건이 이 경로). 최근 N거래일 최저 종가 대비 "실시간 체결가" 상승률로 판정한다.
+            Double extension = PriceExtension.pctAboveRecentLow(recent, current, props.extensionLookbackDays());
+            if (extension != null && extension >= props.maxExtensionPct() && !catalystAllowed) {
+                continue; // 최근 저점 대비 이미 과하게 올라온 자리 — 실적직결 촉매 없으면 보류
             }
             if (!cheap && !catalystAllowed) {
                 continue; // 이미 싼 것도 아니고, 자본배분(재평가) 촉매도 없음 — 원칙 §2/§3-7 둘 다 미달
@@ -237,10 +242,6 @@ public class AutoTradeScheduler {
             FundamentalScore score = fundamentalScore(c, recent);
             if (!score.passes(props.minFundamentalPass())) {
                 continue; // 원칙 §3 체크리스트(실적/재무/자본배분/시장성/상대강도) "대부분 YES" 미달
-            }
-            BigDecimal current = currentPrice(c.getSymbol());
-            if (current == null) {
-                continue;
             }
             String rationale = buyRationale(c, recent, valuation, cheap, rerateCatalyst, score);
             if (orderExecutor.buy(c.getSymbol(), c.getMarket(), props.perSymbolBudget(), current, rationale)) {

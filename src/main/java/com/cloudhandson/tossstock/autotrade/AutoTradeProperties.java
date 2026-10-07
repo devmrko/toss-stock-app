@@ -34,7 +34,8 @@ public record AutoTradeProperties(
         int candidateMaxRetentionDays,
         int newsFadedCooldownMinutes,
         int stopExitCooldownMinutes,
-        double extremeMovePct,
+        double maxExtensionPct,
+        int extensionLookbackDays,
         double catalystValuationMultiple,
         @NestedConfigurationProperty Gate gate) {
 
