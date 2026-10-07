@@ -99,14 +99,14 @@ class OrderExecutorTest {
 
     @Test
     void real_order_commission_and_tax_are_persisted_to_audit_log() {
-        // #841 실사고(2026-10-07): commission/tax를 한 번도 저장 안 해서 DB 실현손익이 토스 앱
-        // 실제 표시(수수료/세금 포함)보다 크게 낙관적이었음(엠플러스 1종목 -24,950 vs 실제 -154,463).
+        // #847(#841 정정, 2026-10-07): 토스 주문응답의 commission/tax는 실측 결과 항상 "0"이라
+        // 쓸 수 없음이 확인됐음(13건) — TradingFeeCalculator로 체결금액×요율을 직접 계산해 저장.
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 8.0,
                 new AutoTradeProperties.Gate(35));
         OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord);
         when(stateMapper.find()).thenReturn(stateWith(false));
-        TossOrder.Execution exec = new TossOrder.Execution("20", "50000", "1000000", "150", "1800", null, null);
+        TossOrder.Execution exec = new TossOrder.Execution("20", "50000", "1000000", "0", "0", null, null);
         when(toss.placeOrder(any())).thenReturn(new TossOrder("ORD1", "005930", "BUY", "MARKET", "FILLED",
                 null, "20", "1000000", "KRW", null, null, exec));
 
@@ -115,8 +115,9 @@ class OrderExecutorTest {
         org.mockito.ArgumentCaptor<AutoTradeOrderLog> captor =
                 org.mockito.ArgumentCaptor.forClass(AutoTradeOrderLog.class);
         verify(logMapper).insert(captor.capture());
+        // 체결금액 1,000,000원 × KR 수수료 0.015% = 150원, 매수라 세금은 0.
         assertThat(captor.getValue().getCommission()).isEqualTo(BigDecimal.valueOf(150));
-        assertThat(captor.getValue().getTax()).isEqualTo(BigDecimal.valueOf(1800));
+        assertThat(captor.getValue().getTax()).isEqualTo(BigDecimal.ZERO);
     }
 
     @Test

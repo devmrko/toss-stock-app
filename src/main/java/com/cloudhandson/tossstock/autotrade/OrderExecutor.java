@@ -68,21 +68,25 @@ public class OrderExecutor {
         boolean success = true;
         String message = dryRun ? "드라이런 — 실주문 안 함" : "실주문 체결";
         BigDecimal filledPrice = currentPrice; // 드라이런은 견적가 그대로, 실주문은 아래서 체결가로 교체
-        BigDecimal commission = null;
-        BigDecimal tax = null;
         if (!dryRun) {
             try {
                 TossOrder order = toss.placeOrder(TossOrderRequest.marketBuy(symbol, qty.toPlainString(),
                         "US".equals(market) ? "USD" : "KRW"));
                 tossOrderId = order == null ? null : order.orderId();
                 filledPrice = actualFilledPrice(order, currentPrice);
-                commission = feeOf(order, TossOrder.Execution::commission);
-                tax = feeOf(order, TossOrder.Execution::tax);
             } catch (RuntimeException e) {
                 success = false;
                 message = truncate("주문 실패: " + e.getMessage());
                 log.warn("매수 주문 실패: symbol={}, {}", symbol, e.toString());
             }
+        }
+
+        BigDecimal commission = null;
+        BigDecimal tax = null;
+        if (success) {
+            BigDecimal filledAmount = filledPrice.multiply(qty);
+            commission = TradingFeeCalculator.commission(filledAmount, market);
+            tax = TradingFeeCalculator.tax(filledAmount, market, "BUY");
         }
 
         saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, qty, filledPrice, tossOrderId, success,
@@ -118,21 +122,25 @@ public class OrderExecutor {
         boolean success = true;
         String message = dryRun ? "드라이런 — 실주문 안 함" : "실주문 체결";
         BigDecimal filledPrice = currentPrice;
-        BigDecimal commission = null;
-        BigDecimal tax = null;
         if (!dryRun) {
             try {
                 TossOrder order = toss.placeOrder(TossOrderRequest.marketSell(position.getSymbol(),
                         position.getEntryQty().toPlainString(), "US".equals(position.getMarket()) ? "USD" : "KRW"));
                 tossOrderId = order == null ? null : order.orderId();
                 filledPrice = actualFilledPrice(order, currentPrice);
-                commission = feeOf(order, TossOrder.Execution::commission);
-                tax = feeOf(order, TossOrder.Execution::tax);
             } catch (RuntimeException e) {
                 success = false;
                 message = truncate("주문 실패: " + e.getMessage());
                 log.warn("매도 주문 실패: symbol={}, {}", position.getSymbol(), e.toString());
             }
+        }
+
+        BigDecimal commission = null;
+        BigDecimal tax = null;
+        if (success) {
+            BigDecimal filledAmount = filledPrice.multiply(position.getEntryQty());
+            commission = TradingFeeCalculator.commission(filledAmount, position.getMarket());
+            tax = TradingFeeCalculator.tax(filledAmount, position.getMarket(), "SELL");
         }
 
         saveLogSafely(position.getSymbol(), "SELL", reason.name(), dryRun, position.getEntryQty(), filledPrice,
@@ -176,27 +184,6 @@ public class OrderExecutor {
             return new BigDecimal(order.execution().averageFilledPrice());
         } catch (NumberFormatException e) {
             return fallback;
-        }
-    }
-
-    /**
-     * 체결응답의 commission/tax를 BigDecimal로(#841, 2026-10-07) — 실측(엠플러스): DB가 가격차만
-     * 계산해 실현손익 -24,950인데 토스 앱 실제 표시는 -154,463, 전체로는 -214,489 vs DB -64,250.
-     * 이 필드들을 한 번도 저장 안 한 게 주 원인으로 추정. 파싱 실패/필드 없음은 null(집계 쪽에서
-     * 안전하게 처리 — 수수료 모름을 0으로 단정하지 않음).
-     */
-    private static BigDecimal feeOf(TossOrder order, java.util.function.Function<TossOrder.Execution, String> field) {
-        if (order == null || order.execution() == null) {
-            return null;
-        }
-        String raw = field.apply(order.execution());
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return new BigDecimal(raw);
-        } catch (NumberFormatException e) {
-            return null;
         }
     }
 

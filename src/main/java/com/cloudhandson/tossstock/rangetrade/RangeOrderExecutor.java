@@ -1,5 +1,6 @@
 package com.cloudhandson.tossstock.rangetrade;
 
+import com.cloudhandson.tossstock.autotrade.TradingFeeCalculator;
 import com.cloudhandson.tossstock.briefing.DiscordClient;
 import com.cloudhandson.tossstock.toss.TossApiClient;
 import com.cloudhandson.tossstock.toss.dto.TossOrder;
@@ -78,21 +79,25 @@ public class RangeOrderExecutor {
         boolean success = true;
         String message = dryRun ? "드라이런 — 실주문 안 함" : "실주문 체결";
         BigDecimal filledPrice = currentPrice; // 드라이런은 견적가 그대로, 실주문은 아래서 체결가로 교체
-        BigDecimal commission = null;
-        BigDecimal tax = null;
         if (!dryRun) {
             try {
                 TossOrder order = toss.placeOrder(
                         TossOrderRequest.marketBuy(symbol, qty.toPlainString(), CURRENCY_KRW));
                 tossOrderId = order == null ? null : order.orderId();
                 filledPrice = actualFilledPrice(order, currentPrice);
-                commission = feeOf(order, TossOrder.Execution::commission);
-                tax = feeOf(order, TossOrder.Execution::tax);
             } catch (RuntimeException e) {
                 success = false;
                 message = truncate("주문 실패: " + e.getMessage());
                 log.warn("매수 주문 실패: symbol={}, {}", symbol, e.toString());
             }
+        }
+
+        BigDecimal commission = null;
+        BigDecimal tax = null;
+        if (success) {
+            BigDecimal filledAmount = filledPrice.multiply(qty);
+            commission = TradingFeeCalculator.commission(filledAmount, MARKET_KR);
+            tax = TradingFeeCalculator.tax(filledAmount, MARKET_KR, "BUY");
         }
 
         saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, qty, filledPrice, tossOrderId, success,
@@ -131,21 +136,25 @@ public class RangeOrderExecutor {
         boolean success = true;
         String message = dryRun ? "드라이런 — 실주문 안 함" : "실주문 체결";
         BigDecimal filledPrice = currentPrice;
-        BigDecimal commission = null;
-        BigDecimal tax = null;
         if (!dryRun) {
             try {
                 TossOrder order = toss.placeOrder(TossOrderRequest.marketSell(position.getSymbol(),
                         position.getEntryQty().toPlainString(), CURRENCY_KRW));
                 tossOrderId = order == null ? null : order.orderId();
                 filledPrice = actualFilledPrice(order, currentPrice);
-                commission = feeOf(order, TossOrder.Execution::commission);
-                tax = feeOf(order, TossOrder.Execution::tax);
             } catch (RuntimeException e) {
                 success = false;
                 message = truncate("주문 실패: " + e.getMessage());
                 log.warn("매도 주문 실패: symbol={}, {}", position.getSymbol(), e.toString());
             }
+        }
+
+        BigDecimal commission = null;
+        BigDecimal tax = null;
+        if (success) {
+            BigDecimal filledAmount = filledPrice.multiply(position.getEntryQty());
+            commission = TradingFeeCalculator.commission(filledAmount, MARKET_KR);
+            tax = TradingFeeCalculator.tax(filledAmount, MARKET_KR, "SELL");
         }
 
         saveLogSafely(position.getSymbol(), "SELL", reason.name(), dryRun, position.getEntryQty(), filledPrice,
@@ -189,22 +198,6 @@ public class RangeOrderExecutor {
             return new BigDecimal(order.execution().averageFilledPrice());
         } catch (NumberFormatException e) {
             return fallback;
-        }
-    }
-
-    /** 체결응답의 commission/tax를 BigDecimal로(#841, 2026-10-07 — #808 OrderExecutor와 동일 수정). */
-    private static BigDecimal feeOf(TossOrder order, java.util.function.Function<TossOrder.Execution, String> field) {
-        if (order == null || order.execution() == null) {
-            return null;
-        }
-        String raw = field.apply(order.execution());
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return new BigDecimal(raw);
-        } catch (NumberFormatException e) {
-            return null;
         }
     }
 
