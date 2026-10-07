@@ -14,20 +14,31 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * PER/PBR 조회 — 한국 종목은 네이버 모바일 API, 미국 종목은 야후 파이낸스 API.
  * 둘 다 비공식(문서화 안 된) 엔드포인트라 언제든 응답 형식이 바뀌거나 막힐 수 있음 —
  * 실패 시 조용히 null 반환(호출측이 ValuationChecker에서 fail-closed 처리).
  * 설계: docs/design/808-auto-trade-engine/fn-valuation-client.md
+ *
+ * 2026-10-07(#836, QA 발견): 호출측(AutoTradeScheduler.scanCandidates는 매 틱, #835 수정 후
+ * processHolding도 뉴스 식은 보유종목마다 매 틱)이 캐싱 없이 매분 이 메서드를 호출 — 저평가+
+ * 상대강세가 며칠 유지되는 종목 하나만으로도 하루 1,440회씩 네이버/야후를 때려 레이트리밋/차단
+ * 위험(테스트 픽스처에 있는 HTTP 429가 실제로 재현될 수 있음). PER/PBR은 분 단위로 바뀌지 않으므로
+ * 짧은 TTL 캐시로 호출량을 줄인다 — 실패(null)도 캐시해서 장애 중 재시도 폭주를 막는다(fail-closed
+ * 방향과도 일치: 캐시된 null이 풀리기 전까지는 계속 "저평가 아님"으로 안전하게 취급됨).
  */
 @Component
 public class ValuationClient {
 
     private static final Logger log = LoggerFactory.getLogger(ValuationClient.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(8);
+    private static final Duration CACHE_TTL = Duration.ofMinutes(15);
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(TIMEOUT)
@@ -35,8 +46,26 @@ public class ValuationClient {
             .build();
     private final ObjectMapper om = new ObjectMapper();
     private volatile String yahooCrumb;
+    private final Map<String, CachedValuation> valuationCache = new ConcurrentHashMap<>();
+
+    private record CachedValuation(Valuation valuation, Instant fetchedAt) {
+        boolean expired() {
+            return Duration.between(fetchedAt, Instant.now()).compareTo(CACHE_TTL) >= 0;
+        }
+    }
 
     public Valuation getValuation(String symbol, String market) {
+        String key = market + ":" + symbol;
+        CachedValuation cached = valuationCache.get(key);
+        if (cached != null && !cached.expired()) {
+            return cached.valuation();
+        }
+        Valuation fresh = fetchValuation(symbol, market);
+        valuationCache.put(key, new CachedValuation(fresh, Instant.now()));
+        return fresh;
+    }
+
+    private Valuation fetchValuation(String symbol, String market) {
         try {
             return "US".equalsIgnoreCase(market) ? fetchYahoo(symbol) : fetchNaver(symbol);
         } catch (Exception e) {
