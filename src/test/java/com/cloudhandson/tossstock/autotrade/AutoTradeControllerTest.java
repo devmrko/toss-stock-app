@@ -4,8 +4,10 @@ import com.cloudhandson.tossstock.toss.PriceCache;
 import com.cloudhandson.tossstock.toss.StockInfoCache;
 import com.cloudhandson.tossstock.toss.dto.TossPrice;
 import com.cloudhandson.tossstock.toss.dto.TossStock;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -14,7 +16,9 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /** #848/#849 — status()가 보유종목(현재가·매수이유 포함)/요약을, orderlog()가 페이지네이션을 반환하는지 검증. */
@@ -28,7 +32,17 @@ class AutoTradeControllerTest {
     private AutoTradeOrderLogMapper orderLogMapper;
     private PriceCache priceCache;
     private StockInfoCache stockInfoCache;
+    private OrderExecutor orderExecutor;
+    private MockedStatic<MarketHours> marketHours;
     private AutoTradeController controller;
+
+    private static AutoTradeProperties props() {
+        return new AutoTradeProperties(false, BigDecimal.valueOf(3_000_000), 5,
+                BigDecimal.valueOf(600_000), 15.0, 10.0, 10.0, "", "0 * * * * *", 20, 1.0, 1.5,
+                30.0, 3.0, 200.0, BigDecimal.valueOf(300_000_000), BigDecimal.valueOf(200_000),
+                20, 2, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON",
+                new AutoTradeProperties.Gate(20));
+    }
 
     @BeforeEach
     void setUp() {
@@ -46,8 +60,16 @@ class AutoTradeControllerTest {
         when(positionMapper.countLoss()).thenReturn(0);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO);
         when(positionMapper.realizedFeesTotal()).thenReturn(BigDecimal.ZERO);
+        orderExecutor = mock(OrderExecutor.class);
         controller = new AutoTradeController(scheduler, discoveryService, stateMapper, positionMapper,
-                candidateMapper, orderLogMapper, priceCache, stockInfoCache);
+                candidateMapper, orderLogMapper, priceCache, stockInfoCache, orderExecutor, props());
+        marketHours = mockStatic(MarketHours.class);
+        marketHours.when(() -> MarketHours.isOpen(anyString(), any(LocalDateTime.class))).thenReturn(true);
+    }
+
+    @AfterEach
+    void tearDown() {
+        marketHours.close();
     }
 
     private static AutoTradePosition position() {
@@ -154,5 +176,87 @@ class AutoTradeControllerTest {
         @SuppressWarnings("unchecked")
         Map<String, String> names = (Map<String, String>) page.get("symbolNames");
         assertThat(names).containsEntry("005930", "삼성전자");
+    }
+
+    // ---- #875 수동 정리 매도 ----
+
+    @Test
+    void 보유종목을_MANUAL로_매도한다() {
+        // 인수조건 1
+        when(positionMapper.findHolding()).thenReturn(List.of(position()));
+        when(priceCache.get(List.of("005930")))
+                .thenReturn(List.of(new TossPrice("005930", "72000", "KRW", null)));
+        when(orderExecutor.sell(any(), eq(ExitReason.MANUAL), any(), anyString())).thenReturn(true);
+
+        var res = controller.sellPosition("005930");
+
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        assertThat(res.getBody()).containsEntry("sold", true);
+        verify(orderExecutor).sell(any(), eq(ExitReason.MANUAL), any(), anyString());
+    }
+
+    @Test
+    void 사유에_수동정리와_지시맥락이_남는다() {
+        // 인수조건 5 — 사후에 자동매도와 구분돼야 한다.
+        when(positionMapper.findHolding()).thenReturn(List.of(position()));
+        when(priceCache.get(List.of("005930")))
+                .thenReturn(List.of(new TossPrice("005930", "72000", "KRW", null)));
+        when(orderExecutor.sell(any(), any(), any(), anyString())).thenReturn(true);
+
+        controller.sellPosition("005930");
+
+        org.mockito.ArgumentCaptor<String> r = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(orderExecutor).sell(any(), eq(ExitReason.MANUAL), any(), r.capture());
+        assertThat(r.getValue()).startsWith("수동매도(")
+                .contains("사유:사용자 지시 — 매수 근거 부실");
+    }
+
+    @Test
+    void 보유하지_않은_종목이면_404이고_주문하지_않는다() {
+        // 인수조건 2
+        when(positionMapper.findHolding()).thenReturn(List.of(position()));
+
+        var res = controller.sellPosition("000660");
+
+        assertThat(res.getStatusCode().value()).isEqualTo(404);
+        verify(orderExecutor, never()).sell(any(), any(), any(), anyString());
+    }
+
+    @Test
+    void 장_마감_중이면_409이고_주문하지_않는다() {
+        // 인수조건 3 — 가장 중요한 가드. sell 은 시장가라 닫힌 시장에 넣으면
+        // 거부되거나 다음 개장 갭 가격에 체결된다.
+        marketHours.when(() -> MarketHours.isOpen(anyString(), any(LocalDateTime.class))).thenReturn(false);
+        when(positionMapper.findHolding()).thenReturn(List.of(position()));
+
+        var res = controller.sellPosition("005930");
+
+        assertThat(res.getStatusCode().value()).isEqualTo(409);
+        verify(orderExecutor, never()).sell(any(), any(), any(), anyString());
+        verify(priceCache, never()).get(anyList());
+    }
+
+    @Test
+    void 현재가_조회_실패면_503이고_주문하지_않는다() {
+        when(positionMapper.findHolding()).thenReturn(List.of(position()));
+        when(priceCache.get(List.of("005930"))).thenReturn(List.of());
+
+        var res = controller.sellPosition("005930");
+
+        assertThat(res.getStatusCode().value()).isEqualTo(503);
+        verify(orderExecutor, never()).sell(any(), any(), any(), anyString());
+    }
+
+    @Test
+    void 주문_실패면_502를_반환한다() {
+        when(positionMapper.findHolding()).thenReturn(List.of(position()));
+        when(priceCache.get(List.of("005930")))
+                .thenReturn(List.of(new TossPrice("005930", "72000", "KRW", null)));
+        when(orderExecutor.sell(any(), any(), any(), anyString())).thenReturn(false);
+
+        var res = controller.sellPosition("005930");
+
+        assertThat(res.getStatusCode().value()).isEqualTo(502);
+        assertThat(res.getBody()).containsEntry("sold", false);
     }
 }

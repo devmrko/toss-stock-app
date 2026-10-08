@@ -7,6 +7,7 @@ import com.cloudhandson.tossstock.toss.dto.TossStock;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -34,11 +35,14 @@ public class AutoTradeController {
     private final AutoTradeOrderLogMapper orderLogMapper;
     private final PriceCache priceCache;
     private final StockInfoCache stockInfoCache;
+    private final OrderExecutor orderExecutor;
+    private final AutoTradeProperties props;
 
     public AutoTradeController(AutoTradeScheduler scheduler, CandidateDiscoveryService discoveryService,
                                 AutoTradeStateMapper stateMapper, AutoTradePositionMapper positionMapper,
                                 AutoTradeCandidateMapper candidateMapper, AutoTradeOrderLogMapper orderLogMapper,
-                                PriceCache priceCache, StockInfoCache stockInfoCache) {
+                                PriceCache priceCache, StockInfoCache stockInfoCache,
+                                OrderExecutor orderExecutor, AutoTradeProperties props) {
         this.scheduler = scheduler;
         this.discoveryService = discoveryService;
         this.stateMapper = stateMapper;
@@ -47,6 +51,58 @@ public class AutoTradeController {
         this.orderLogMapper = orderLogMapper;
         this.priceCache = priceCache;
         this.stockInfoCache = stockInfoCache;
+        this.orderExecutor = orderExecutor;
+        this.props = props;
+    }
+
+    /**
+     * 보유 포지션 1건을 수동 정리(#875). 투자원칙 §4 에는 "매수 근거 부실"이라는 매도
+     * 사유가 없다 — 봇이 자동으로 팔면 원칙에 없는 매도 규칙을 또 만드는 것이므로(#871 에서
+     * 제거한 것과 같은 실수) 사람이 지시하는 경로로 둔다.
+     *
+     * <p>토스 API 를 직접 호출하지 않고 {@link OrderExecutor#sell} 을 쓰는 이유: 주문 발행
+     * + 체결 확인 + 수수료·세금 계산 + 주문로그 + 포지션 EXITED 전환 + 알림이 한 흐름이다.
+     * 직접 호출하면 원장이 HOLDING 으로 남아 봇이 없는 포지션의 손절을 계속 감시한다.
+     *
+     * <p><b>장 마감 중에는 409 로 거부한다</b> — sell 은 시장가 주문이라 닫힌 시장에 넣으면
+     * 거부되거나 다음 개장 갭 가격에 체결된다. 실거래에서 체결가를 통제할 수 없는 주문은 내지 않는다.
+     */
+    @PostMapping("/positions/{symbol}/sell")
+    public ResponseEntity<Map<String, Object>> sellPosition(@PathVariable String symbol) {
+        AutoTradePosition position = positionMapper.findHolding().stream()
+                .filter(p -> p.getSymbol().equals(symbol))
+                .findFirst().orElse(null);
+        if (position == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("symbol", symbol, "error", "보유 중이 아님"));
+        }
+        if (!MarketHours.isOpen(position.getMarket(), java.time.LocalDateTime.now())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "symbol", symbol, "market", position.getMarket(),
+                    "error", "장 마감 중 — 시장가 주문은 개장 중에만 낸다(체결가 통제 불가)"));
+        }
+        List<TossPrice> prices = priceCache.get(List.of(symbol));
+        if (prices.isEmpty() || prices.get(0).lastPrice() == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("symbol", symbol, "error", "현재가 조회 실패 — 잠시 후 재시도"));
+        }
+        BigDecimal current = new BigDecimal(prices.get(0).lastPrice());
+        BigDecimal peak = position.getPeakPrice() == null ? position.getEntryPrice() : position.getPeakPrice();
+        double trailPct = TrailingStopCalculator.effectiveTrailPct(peak, position.getEntryPrice(),
+                props.trailStopPct(), props.multibaggerGainPct(), props.multibaggerTrailStopPct());
+        String rationale = SellRationale.describe(ExitReason.MANUAL, position.getEntryPrice(), peak, current,
+                TrailingStopCalculator.hardFloor(position.getEntryPrice(), props.hardStopPct()),
+                TrailingStopCalculator.trailFloor(peak, trailPct),
+                "사용자 지시 — 매수 근거 부실(구 게이트 등록분)");
+
+        boolean ok = orderExecutor.sell(position, ExitReason.MANUAL, current, rationale);
+        Map<String, Object> body = new HashMap<>();
+        body.put("symbol", symbol);
+        body.put("sold", ok);
+        body.put("price", current);
+        body.put("rationale", rationale);
+        return ok ? ResponseEntity.ok(body)
+                : ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
     }
 
     /** 스케줄러 강제 1회 실행(드라이런 여부는 auto_trade_state/설정을 그대로 따름 — 이 호출 자체가 안전장치를 우회하지 않음). */
