@@ -286,6 +286,81 @@ class CandidateDiscoveryServiceTest {
         verify(candidateMapper, never()).deactivate("005930");
     }
 
+    // ---- #878 중복제거는 자격판정 뒤에 ----
+
+    /** 자격 미달(규모 미제시) facts. */
+    private static final String UNQUALIFIED_FACTS = """
+            {"confirmed":true,"isTransaction":true,"materialAmount":false,
+             "priceAlreadyMoved":false,"beneficiary":"SELLER","riskFlag":"NONE"}""";
+
+    @Test
+    void 탈락기사가_먼저_와도_통과기사로_등록된다() {
+        // 인수조건 1·2 — 이 버그의 핵심. 라이브에서 TSM 이 통과 기사 2건을 갖고도
+        // 탈락 기사가 먼저 처리돼 등록되지 않았다.
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("009150", "009150:S4", "삼성전기, 업무협약 체결", UNQUALIFIED_FACTS),
+                news("009150", "009150:S5", "삼성전기, 3900억 규모 기판 공급계약")));
+        when(candidateMapper.existsActive("009150")).thenReturn(false);
+
+        service.refresh();
+
+        verify(candidateMapper).insert(argThat(c -> c.getSymbol().equals("009150")
+                && c.getValuationNote().contains("3900억 규모 기판 공급계약")));
+    }
+
+    @Test
+    void 통과기사가_여러건이어도_한번만_등록된다() {
+        // 인수조건 5
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("009150", "009150:S5", "삼성전기, 3900억 규모 기판 공급계약"),
+                news("009150", "009150:S5", "삼성전기, 2000억 규모 추가 수주")));
+        when(candidateMapper.existsActive("009150")).thenReturn(false);
+
+        service.refresh();
+
+        verify(candidateMapper, times(1)).insert(any());
+    }
+
+    @Test
+    void 이미_활성인_종목은_existsActive를_한번만_조회한다() {
+        // 인수조건 4 — 회차 내 불변 조건이므로 seen 을 소비해야 한다.
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("009150", "009150:S5", "삼성전기, 3900억 수주"),
+                news("009150", "009150:S5", "삼성전기, 2000억 수주"),
+                news("009150", "009150:S5", "삼성전기, 1000억 수주")));
+        when(candidateMapper.existsActive("009150")).thenReturn(true);
+
+        service.refresh();
+
+        verify(candidateMapper, never()).insert(any());
+        verify(candidateMapper, times(1)).existsActive("009150");
+    }
+
+    @Test
+    void 섹터명_타겟은_반복_평가되지_않는다() {
+        // 인수조건 3 — facts 가 null 이어도(자격 판정 전에 걸러지므로) 예외 없이 지나가야 한다.
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("반도체", "반도체:S5", "반도체 업황 개선", null),
+                news("반도체", "반도체:S5", "반도체 수출 증가", null)));
+
+        service.refresh();
+
+        verify(candidateMapper, never()).insert(any());
+    }
+
+    @Test
+    void 유상증자로_등록된_후보는_재심사로_해제된다() {
+        // #877 확장이 재심사에도 반영돼야 한다.
+        when(candidateMapper.findActive()).thenReturn(List.of(
+                candidate("317530", "자동발견(2026-10-08T17:00, 촉매점수 2/4): "
+                        + "에피소드컴퍼니, 140억원 제3자배정 유상증자")));
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
+
+        service.refresh();
+
+        verify(candidateMapper).deactivate("317530");
+    }
+
     @Test
     void 촉매점수가_노트에_기록된다() {
         // 인수조건 3 — 판정 근거의 설명 가능성.

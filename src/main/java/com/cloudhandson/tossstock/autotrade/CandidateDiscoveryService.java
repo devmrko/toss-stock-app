@@ -119,8 +119,12 @@ public class CandidateDiscoveryService {
             return "구 게이트 등록분";
         }
         String title = titleOf(note);
-        if (TitleGuard.lossSide(title)) {
-            return "제목판정 LOSS";
+        // #877: 매수 게이트와 같은 가드를 쓴다 — 적자만 보던 것을 유상증자·감자·횡령·상폐까지
+        // 확장했으므로 재심사도 같이 넓어져야 한다. 그러지 않으면 유상증자로 등록된 후보가
+        // 재심사를 통과해 남는다.
+        String risk = TitleGuard.riskFlagOf(title);
+        if (risk != null) {
+            return "제목판정 " + risk;
         }
         if (TitleGuard.buyerSide(title)) {
             return "제목판정 BUYER";
@@ -134,14 +138,36 @@ public class CandidateDiscoveryService {
         return i < 0 ? note : note.substring(i + 3);
     }
 
+    /**
+     * 자격 있는 뉴스에서 신규 후보를 등록한다.
+     *
+     * <p><b>#878 중요</b>: {@code seen} 은 <b>기사마다 달라지지 않는 조건</b>으로만 소비한다.
+     * 이전 구현은 루프 진입부에서 {@code !seen.add(symbol)} 로 먼저 소비해, 한 종목의
+     * 비자격 기사가 먼저 처리되면 <b>그 종목이 그 회차에서 통째로 버려졌다</b> — 같은 창에
+     * 자격 통과 기사가 있어도 등록되지 않았다. 라이브 실증: TSM 이 기사 4건 중 2건이 자격을
+     * 통과했는데도 활성 후보가 0건이었다(탈락 기사가 먼저 처리됨). 게이트를 조일수록
+     * (#865/#869/#877) 탈락 비율이 올라가 영향이 커진다.
+     */
     private void addNewCandidates() {
         Set<String> seen = new HashSet<>();
         for (StockNews n : newsMapper.findRecentEvents(LocalDateTime.now().minusHours(LOOKBACK_HOURS))) {
             for (String target : n.getTargets().split(",")) {
                 String symbol = target.trim();
-                if (symbol.isEmpty() || !seen.add(symbol)) {
+                if (symbol.isEmpty() || seen.contains(symbol)) {
+                    continue;   // 이 회차에서 이미 결정된 종목
+                }
+                // --- 아래 두 조건은 회차 내에서 불변 → seen 을 소비한다 ---
+                String market = marketOf(symbol);
+                if (market == null) {
+                    seen.add(symbol);
+                    continue;   // 섹터명(반도체·바이오)·MARKET 등 종목이 아닌 타겟.
+                                // 자격 판정(facts 파싱)보다 앞에 두어 헛일을 막는다.
+                }
+                if (candidateMapper.existsActive(symbol)) {
+                    seen.add(symbol);
                     continue;
                 }
+                // --- 아래 두 조건은 기사마다 다르다 → seen 을 소비하지 않는다 ---
                 String level = NewsSignals.levelOf(n.getSentiment(), symbol);
                 if (level == null || Integer.parseInt(level.substring(1)) < 4) {
                     continue;
@@ -152,15 +178,9 @@ public class CandidateDiscoveryService {
                         NewsFacts.parse(n.getFacts()), n.getTitle());
                 if (!v.pass()) {
                     log.debug("촉매 자격 미달({}): {} - {}", v.reason(), symbol, n.getTitle());
-                    continue;
+                    continue;   // 다른 기사로 다시 평가될 기회를 남긴다(#878)
                 }
-                String market = marketOf(symbol);
-                if (market == null) {
-                    continue; // 섹터명/MARKET 등 종목 아닌 타겟
-                }
-                if (candidateMapper.existsActive(symbol)) {
-                    continue;
-                }
+
                 AutoTradeCandidate c = new AutoTradeCandidate();
                 c.setSymbol(symbol);
                 c.setMarket(market);
@@ -168,6 +188,7 @@ public class CandidateDiscoveryService {
                 c.setValuationNote("자동발견(" + LocalDateTime.now() + ", 촉매점수 " + v.score()
                         + "/4): " + n.getTitle());
                 candidateMapper.insert(c);
+                seen.add(symbol);
                 log.info("후보 자동등록: {} ({}) 촉매점수 {}/4 - {}", symbol, market, v.score(), n.getTitle());
                 if ("US".equals(market)) {
                     dailyCollector.backfillSymbol(symbol, null); // 비동기 — KR은 정기 전종목 스캔이 이미 커버

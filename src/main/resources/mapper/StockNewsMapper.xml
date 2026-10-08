@@ -79,6 +79,9 @@
         FROM stock_news
         WHERE kind = 'EVENT' AND fetched_at &gt;= #{since}
           AND (sentiment LIKE '%S4%' OR sentiment LIKE '%S5%')
+        <!-- #878 최신 기사가 먼저 평가돼야 한다: 가장 신선한 촉매가 등록 근거가 되고,
+             순서가 결정적이어야 같은 데이터에서 같은 결과가 나온다. -->
+        ORDER BY COALESCE(published_at, fetched_at) DESC
     </select>
 
     <update id="expireOld">
