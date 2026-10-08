@@ -40,6 +40,7 @@ public class AutoTradeScheduler {
     private final StockNewsMapper newsMapper;
     private final PriceCache priceCache;
     private final NewsFadeDetector newsFadeDetector;
+    private final RiskEventDetector riskEventDetector;
     private final ValuationClient valuationClient;
     private final CapitalReturnCatalystDetector capitalReturnCatalystDetector;
     private final UniverseMapper universeMapper;
@@ -50,7 +51,8 @@ public class AutoTradeScheduler {
     public AutoTradeScheduler(AutoTradeProperties props, AutoTradeStateMapper stateMapper,
                                AutoTradePositionMapper positionMapper, AutoTradeCandidateMapper candidateMapper,
                                DailyOhlcvMapper dailyMapper, StockNewsMapper newsMapper, PriceCache priceCache,
-                               NewsFadeDetector newsFadeDetector, ValuationClient valuationClient,
+                               NewsFadeDetector newsFadeDetector, RiskEventDetector riskEventDetector,
+                               ValuationClient valuationClient,
                                CapitalReturnCatalystDetector capitalReturnCatalystDetector,
                                UniverseMapper universeMapper, CandidateDiscoveryService candidateDiscovery,
                                OrderExecutor orderExecutor, DiscordClient discord) {
@@ -62,6 +64,7 @@ public class AutoTradeScheduler {
         this.newsMapper = newsMapper;
         this.priceCache = priceCache;
         this.newsFadeDetector = newsFadeDetector;
+        this.riskEventDetector = riskEventDetector;
         this.valuationClient = valuationClient;
         this.capitalReturnCatalystDetector = capitalReturnCatalystDetector;
         this.universeMapper = universeMapper;
@@ -129,11 +132,25 @@ public class AutoTradeScheduler {
         // 기사 만료는 "더 사지 않을 이유"는 되지만 "팔 이유"는 되지 않는다(비대칭 의도).
         // 안 사면 기회비용이고, 팔면 손실과 수수료가 확정된다. 그래서 hasNewsFaded 는
         // 후보 풀 경로(매수 쪽)에만 남겨 뒀다. 하방은 HARD_STOP/TRAIL_STOP/CIRCUIT_BREAKER 가 지킨다.
+        //
+        // #872: 만료 대신 "논거 무효"를 본다 — 진입 이후 리스크 기사(유증·횡령·상폐·블록딜·
+        // 소송·적자)가 나오면 즉시 이탈한다. 원칙 §3-3/§3-5 는 보유 중에도 깨지면 안 되는
+        // 조건이고, 깨졌으면 -10% 까지 끌고 가는 것보다 나오는 게 낫다.
+        // 손절을 먼저 평가하는 이유: 원칙 §4 의 필수 하드룰이고, 이미 -10% 를 깨뜨린
+        // 포지션은 리스크 기사 유무와 무관하게 팔아야 하며 사유도 그쪽이 더 정확하다.
+        String riskNote = null;
+        if (exit == ExitReason.NONE) {
+            RiskVerdict risk = riskEventDetector.detect(p.getSymbol(), p.getEntryAt());
+            if (risk != null) {
+                exit = ExitReason.RISK_EVENT;
+                riskNote = risk.flag() + " \"" + risk.title() + "\"";
+            }
+        }
         if (exit != ExitReason.NONE) {
             // 결정근거 스냅샷(#832) — 하드/트레일 손절선은 판정에 쓴 바로 그 공식으로 재계산(부수효과 없음).
             String rationale = SellRationale.describe(exit, p.getEntryPrice(), peak, current,
                     TrailingStopCalculator.hardFloor(p.getEntryPrice(), props.hardStopPct()),
-                    TrailingStopCalculator.trailFloor(peak, props.trailStopPct()));
+                    TrailingStopCalculator.trailFloor(peak, props.trailStopPct()), riskNote);
             orderExecutor.sell(p, exit, current, rationale);
         }
     }

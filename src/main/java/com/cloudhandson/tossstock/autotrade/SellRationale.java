@@ -27,12 +27,25 @@ public final class SellRationale {
      */
     public static String describe(ExitReason reason, BigDecimal entryPrice, BigDecimal peakPrice,
                                    BigDecimal currentPrice, BigDecimal hardFloor, BigDecimal trailFloor) {
-        return label(reason)
+        return describe(reason, entryPrice, peakPrice, currentPrice, hardFloor, trailFloor, null);
+    }
+
+    /**
+     * 비고를 덧붙이는 오버로드(#872) — RISK_EVENT 는 "어떤 리스크였고 근거 기사가 무엇인지"가
+     * 사후 검증의 핵심이라 사유 문자열에 남긴다.
+     *
+     * @param note 비고(null·빈값이면 덧붙이지 않아 기존 출력과 동일)
+     */
+    public static String describe(ExitReason reason, BigDecimal entryPrice, BigDecimal peakPrice,
+                                   BigDecimal currentPrice, BigDecimal hardFloor, BigDecimal trailFloor,
+                                   String note) {
+        String base = label(reason)
                 + "(피크" + plain(peakPrice) + "→현재" + plain(currentPrice)
                 + "," + changePct(peakPrice, currentPrice) + ")"
                 + " 진입" + plain(entryPrice)
                 + " 수익" + changePct(entryPrice, currentPrice)
                 + " " + stopPart(hardFloor, trailFloor);
+        return (note == null || note.isBlank()) ? base : base + " 사유:" + note;
     }
 
     private static String label(ExitReason reason) {
@@ -43,6 +56,7 @@ public final class SellRationale {
             case HARD_STOP -> "하드스탑";
             case TRAIL_STOP -> "트레일스탑";
             case NEWS_FADED -> "뉴스소멸";
+            case RISK_EVENT -> "리스크이벤트";
             case CIRCUIT_BREAKER -> "서킷브레이커";
             case MANUAL -> "수동매도";
             case NONE -> "사유없음";

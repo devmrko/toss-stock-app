@@ -52,6 +52,7 @@ class AutoTradeSchedulerTest {
     private CandidateDiscoveryService candidateDiscovery;
     private OrderExecutor orderExecutor;
     private AutoTradeScheduler scheduler;
+    private RiskEventDetector riskEventDetector;
     private MockedStatic<MarketHours> marketHours;
 
     /** 운영 yml 과 같은 형태. 펀더멘털 통과 기준만 1로 낮춰(재무데이터 없는 환경) 매수 경로를 끝까지 태운다. */
@@ -71,13 +72,15 @@ class AutoTradeSchedulerTest {
         newsMapper = mock(StockNewsMapper.class);
         priceCache = mock(PriceCache.class);
         newsFadeDetector = mock(NewsFadeDetector.class);
+        riskEventDetector = mock(RiskEventDetector.class);
         valuationClient = mock(ValuationClient.class);
         catalystDetector = mock(CapitalReturnCatalystDetector.class);
         universeMapper = mock(UniverseMapper.class);
         candidateDiscovery = mock(CandidateDiscoveryService.class);
         orderExecutor = mock(OrderExecutor.class);
         scheduler = new AutoTradeScheduler(props(), stateMapper, positionMapper, candidateMapper, dailyMapper,
-                newsMapper, priceCache, newsFadeDetector, valuationClient, catalystDetector, universeMapper,
+                newsMapper, priceCache, newsFadeDetector, riskEventDetector, valuationClient,
+                catalystDetector, universeMapper,
                 candidateDiscovery, orderExecutor, mock(DiscordClient.class));
         marketHours = mockStatic(MarketHours.class);
         marketHours.when(() -> MarketHours.isOpen(anyString(), any(LocalDateTime.class))).thenReturn(true);
@@ -168,6 +171,66 @@ class AutoTradeSchedulerTest {
         scheduler.tick();
 
         verify(orderExecutor).sell(any(), eq(ExitReason.TRAIL_STOP), any(), any());
+    }
+
+    // ---- #872 논거 무효는 매도 사유다 ----
+
+    @Test
+    void 진입_이후_리스크_기사가_나오면_RISK_EVENT로_팔린다() {
+        // 인수조건 1 — 손절선 위여도 논거가 깨졌으면 즉시 이탈한다(원칙 §3-3/§3-5).
+        holdingAt("225000");
+        when(riskEventDetector.detect(eq(SYMBOL), any()))
+                .thenReturn(new RiskVerdict("DILUTION", "삼성전자, 1200억 유상증자 결정"));
+
+        scheduler.tick();
+
+        verify(orderExecutor).sell(any(), eq(ExitReason.RISK_EVENT), any(), any());
+    }
+
+    @Test
+    void 리스크_기사가_없으면_팔지_않는다() {
+        // 인수조건 4 — #871 회귀 방지. detect 가 null 이면 매도 없음.
+        holdingAt("225000");
+        when(riskEventDetector.detect(eq(SYMBOL), any())).thenReturn(null);
+
+        scheduler.tick();
+
+        verify(orderExecutor, org.mockito.Mockito.never()).sell(any(), any(), any(), any());
+    }
+
+    @Test
+    void 손절조건이_동시면_손절이_우선한다() {
+        // 인수조건 5 — 원칙 §4 의 필수 하드룰이 먼저다. detect 는 호출조차 되지 않는다.
+        AutoTradePosition p = holding();
+        p.setPeakPrice(BigDecimal.valueOf(200_000));
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of(p));
+        when(positionMapper.countHolding()).thenReturn(1);
+        when(priceCache.get(List.of(SYMBOL)))
+                .thenReturn(List.of(new TossPrice(SYMBOL, "179000", "KRW", null)));
+        when(riskEventDetector.detect(eq(SYMBOL), any()))
+                .thenReturn(new RiskVerdict("DILUTION", "유상증자 결정"));
+
+        scheduler.tick();
+
+        verify(orderExecutor).sell(any(), eq(ExitReason.HARD_STOP), any(), any());
+        verify(riskEventDetector, org.mockito.Mockito.never()).detect(any(), any());
+    }
+
+    @Test
+    void RISK_EVENT_사유에_리스크종류와_기사제목이_남는다() {
+        // 인수조건 6 — 사후 검증의 핵심이라 사유 문자열에 남긴다.
+        holdingAt("225000");
+        when(riskEventDetector.detect(eq(SYMBOL), any()))
+                .thenReturn(new RiskVerdict("GOVERNANCE", "삼성전자, 횡령 혐의 조사"));
+
+        scheduler.tick();
+
+        ArgumentCaptor<String> rationale = ArgumentCaptor.forClass(String.class);
+        verify(orderExecutor).sell(any(), eq(ExitReason.RISK_EVENT), any(), rationale.capture());
+        assertThat(rationale.getValue())
+                .startsWith("리스크이벤트(")
+                .contains("사유:GOVERNANCE \"삼성전자, 횡령 혐의 조사\"");
     }
 
     @Test

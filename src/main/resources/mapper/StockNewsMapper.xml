@@ -88,7 +88,7 @@
 
     <select id="forSymbolBetween" resultMap="newsMap">
         SELECT id, ext_id, title, url, source, published_at, fetched_at, status,
-               targets, sentiment, rationale, kind, model, expires_at
+               targets, sentiment, rationale, kind, model, expires_at, facts
         FROM stock_news
         WHERE ',' || targets || ',' LIKE '%,' || #{symbol} || ',%'
           AND COALESCE(published_at, fetched_at) BETWEEN #{from} AND #{to}
