@@ -39,6 +39,7 @@ class RangeOrderExecutorTest {
     private RangeTradeOrderLogMapper logMapper;
     private TossApiClient toss;
     private DiscordClient discord;
+    private com.cloudhandson.tossstock.autotrade.CommissionRateCache commissionRates;
     private RangeOrderExecutor dryRunExecutor;
 
     @BeforeEach
@@ -48,11 +49,16 @@ class RangeOrderExecutorTest {
         logMapper = mock(RangeTradeOrderLogMapper.class);
         toss = mock(TossApiClient.class);
         discord = mock(DiscordClient.class);
+        commissionRates = mock(com.cloudhandson.tossstock.autotrade.CommissionRateCache.class);
+        // #863 조회 요율 부재 시 기본값과 같은 값을 돌려줘 기존 기대값을 유지한다.
+        when(commissionRates.rateFor(org.mockito.ArgumentMatchers.anyString())).thenAnswer(
+                i -> com.cloudhandson.tossstock.autotrade.TradingFeeCalculator
+                        .defaultCommissionRate(i.getArgument(0)));
         dryRunExecutor = executor(props(true));
     }
 
     private RangeOrderExecutor executor(RangeTradeProperties p) {
-        return new RangeOrderExecutor(p, stateMapper, positionMapper, logMapper, toss, discord);
+        return new RangeOrderExecutor(p, stateMapper, positionMapper, logMapper, toss, discord, commissionRates);
     }
 
     private RangeTradeState stateWith(boolean dbDryRun) {

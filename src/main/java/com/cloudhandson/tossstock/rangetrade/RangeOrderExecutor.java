@@ -38,16 +38,19 @@ public class RangeOrderExecutor {
     private final RangeTradeOrderLogMapper logMapper;
     private final TossApiClient toss;
     private final DiscordClient discord;
+    private final com.cloudhandson.tossstock.autotrade.CommissionRateCache commissionRates;
 
     public RangeOrderExecutor(RangeTradeProperties props, RangeTradeStateMapper stateMapper,
                               RangeTradePositionMapper positionMapper, RangeTradeOrderLogMapper logMapper,
-                              TossApiClient toss, DiscordClient discord) {
+                              TossApiClient toss, DiscordClient discord,
+                              com.cloudhandson.tossstock.autotrade.CommissionRateCache commissionRates) {
         this.props = props;
         this.stateMapper = stateMapper;
         this.positionMapper = positionMapper;
         this.logMapper = logMapper;
         this.toss = toss;
         this.discord = discord;
+        this.commissionRates = commissionRates;
     }
 
     /** 이중 안전장치: 코드 설정과 DB 상태 중 하나라도 드라이런이면 드라이런(상태 조회 실패/행 없음도 드라이런). */
@@ -101,7 +104,8 @@ public class RangeOrderExecutor {
         BigDecimal tax = null;
         if (success) {
             BigDecimal filledAmount = filledPrice.multiply(qty);
-            commission = TradingFeeCalculator.commission(filledAmount, MARKET_KR);
+            commission = TradingFeeCalculator.commission(filledAmount, MARKET_KR,
+                    commissionRates.rateFor(MARKET_KR));   // #863
             tax = TradingFeeCalculator.tax(filledAmount, MARKET_KR, "BUY");
         }
 
@@ -159,7 +163,8 @@ public class RangeOrderExecutor {
         BigDecimal tax = null;
         if (success) {
             BigDecimal filledAmount = filledPrice.multiply(position.getEntryQty());
-            commission = TradingFeeCalculator.commission(filledAmount, MARKET_KR);
+            commission = TradingFeeCalculator.commission(filledAmount, MARKET_KR,
+                    commissionRates.rateFor(MARKET_KR));   // #863
             tax = TradingFeeCalculator.tax(filledAmount, MARKET_KR, "SELL");
         }
 

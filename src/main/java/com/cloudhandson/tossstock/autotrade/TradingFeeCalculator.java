@@ -50,13 +50,30 @@ public final class TradingFeeCalculator {
      * (#861에서 발견: 정수 반올림이면 $0.50 수수료가 $1로 잡혀 100% 과대계상됨.)
      */
     public static BigDecimal commission(BigDecimal filledAmount, String market) {
+        return commission(filledAmount, market, defaultCommissionRate(market));
+    }
+
+    /**
+     * 요율을 주입받는 오버로드(#863) — 토스 /api/v1/commissions 조회값을 쓰기 위한 것이다.
+     * 상수로 들고 있으면 요율이 바뀌는 순간 조용히 틀려지고, 그 틀림은 실현손익 집계에서
+     * 뒤늦게 드러난다. 계산기는 순수 함수로 유지하고 조회는 {@code CommissionRateCache} 가 한다.
+     *
+     * @param rate null·0 이하면 기본값으로 대체(폴백) — 수수료를 못 구해 주문이 막히면 안 된다
+     */
+    public static BigDecimal commission(BigDecimal filledAmount, String market, BigDecimal rate) {
         if (filledAmount == null || filledAmount.signum() <= 0) {
             return BigDecimal.ZERO;
         }
+        BigDecimal applied = (rate == null || rate.signum() <= 0) ? defaultCommissionRate(market) : rate;
         if ("US".equalsIgnoreCase(market)) {
-            return filledAmount.multiply(US_COMMISSION_RATE).setScale(2, RoundingMode.HALF_UP);
+            return filledAmount.multiply(applied).setScale(2, RoundingMode.HALF_UP);
         }
-        return filledAmount.multiply(KR_COMMISSION_RATE).setScale(0, RoundingMode.HALF_UP);
+        return filledAmount.multiply(applied).setScale(0, RoundingMode.HALF_UP);
+    }
+
+    /** 조회 실패 시 쓰는 기본 요율(실측 기반 상수). */
+    public static BigDecimal defaultCommissionRate(String market) {
+        return "US".equalsIgnoreCase(market) ? US_COMMISSION_RATE : KR_COMMISSION_RATE;
     }
 
     /**

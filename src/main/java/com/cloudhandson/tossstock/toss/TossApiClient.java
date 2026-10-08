@@ -1,6 +1,7 @@
 package com.cloudhandson.tossstock.toss;
 
 import com.cloudhandson.tossstock.toss.dto.TossAccount;
+import com.cloudhandson.tossstock.toss.dto.TossCommission;
 import com.cloudhandson.tossstock.toss.dto.TossBuyingPower;
 import com.cloudhandson.tossstock.toss.dto.TossCandle;
 import com.cloudhandson.tossstock.toss.dto.TossOrder;
@@ -221,6 +222,31 @@ public class TossApiClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record BuyingPowerResponse(TossBuyingPower result) {
+    }
+
+    /**
+     * 수수료 요율표 — GET /api/v1/commissions (#863).
+     * 요율을 코드에 박아두면 바뀌는 순간 조용히 틀려지고, 그 틀림은 실현손익 집계에서
+     * 뒤늦게 드러난다. {@code CommissionRateCache} 가 1일 캐시로 감싸 쓴다.
+     */
+    public List<TossCommission> getCommissions() {
+        return withAuthRetry(() -> {
+            CommissionsResponse body = restClient.get()
+                    .uri("/api/v1/commissions")
+                    .header("Authorization", "Bearer " + auth.getAccessToken())
+                    .header("X-Tossinvest-Account", firstAccountSeq())
+                    .retrieve()
+                    .onStatus(s -> s.value() >= 400, (req, res) -> {
+                        throw new TossApiException("수수료 요율 조회 실패: HTTP " + res.getStatusCode().value(),
+                                res.getStatusCode().value());
+                    })
+                    .body(CommissionsResponse.class);
+            return body == null || body.result() == null ? List.<TossCommission>of() : body.result();
+        });
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record CommissionsResponse(List<TossCommission> result) {
     }
 
     // ---- 주문(#808) — 2026-09-29 해성디에스(195870) 1주 매수/매도 실주문으로 스키마 검증 완료. ----

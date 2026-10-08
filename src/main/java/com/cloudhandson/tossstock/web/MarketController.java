@@ -40,6 +40,12 @@ public class MarketController {
         return toss.getAccounts();
     }
 
+    /** 수수료 요율표(#863) — 운영 중 요율 확인용. */
+    @GetMapping("/commissions")
+    public List<com.cloudhandson.tossstock.toss.dto.TossCommission> commissions() {
+        return toss.getCommissions();
+    }
+
     /** 경계 검증: 콤마 분리, 공백 제거, 빈 입력 거부. */
     private List<String> parseSymbols(String symbols) {
         if (symbols == null || symbols.isBlank()) {

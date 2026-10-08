@@ -31,16 +31,19 @@ public class OrderExecutor {
     private final AutoTradeOrderLogMapper logMapper;
     private final TossApiClient toss;
     private final DiscordClient discord;
+    private final CommissionRateCache commissionRates;
 
     public OrderExecutor(AutoTradeProperties props, AutoTradeStateMapper stateMapper,
                           AutoTradePositionMapper positionMapper, AutoTradeOrderLogMapper logMapper,
-                          TossApiClient toss, DiscordClient discord) {
+                          TossApiClient toss, DiscordClient discord,
+                          CommissionRateCache commissionRates) {
         this.props = props;
         this.stateMapper = stateMapper;
         this.positionMapper = positionMapper;
         this.logMapper = logMapper;
         this.toss = toss;
         this.discord = discord;
+        this.commissionRates = commissionRates;
     }
 
     /** 이중 안전장치: 코드 설정과 DB 상태 중 하나라도 드라이런이면 드라이런(§9). */
@@ -91,7 +94,8 @@ public class OrderExecutor {
         BigDecimal tax = null;
         if (success) {
             BigDecimal filledAmount = filledPrice.multiply(qty);
-            commission = TradingFeeCalculator.commission(filledAmount, market);
+            commission = TradingFeeCalculator.commission(filledAmount, market,
+                    commissionRates.rateFor(market));   // #863 조회 요율(실패 시 기본값)
             tax = TradingFeeCalculator.tax(filledAmount, market, "BUY");
         }
 
@@ -146,7 +150,8 @@ public class OrderExecutor {
         BigDecimal tax = null;
         if (success) {
             BigDecimal filledAmount = filledPrice.multiply(position.getEntryQty());
-            commission = TradingFeeCalculator.commission(filledAmount, position.getMarket());
+            commission = TradingFeeCalculator.commission(filledAmount, position.getMarket(),
+                    commissionRates.rateFor(position.getMarket()));   // #863
             tax = TradingFeeCalculator.tax(filledAmount, position.getMarket(), "SELL");
         }
 

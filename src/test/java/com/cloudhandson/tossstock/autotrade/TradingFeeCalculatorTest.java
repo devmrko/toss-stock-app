@@ -52,4 +52,43 @@ class TradingFeeCalculatorTest {
         assertThat(TradingFeeCalculator.tax(BigDecimal.ZERO, "KR", "SELL")).isEqualTo(BigDecimal.ZERO);
         assertThat(TradingFeeCalculator.tax(null, "KR", "SELL")).isEqualTo(BigDecimal.ZERO);
     }
+
+    // ---- #863 요율 주입 ----
+
+    @Test
+    void 주입된_요율로_계산한다() {
+        BigDecimal amount = new BigDecimal("1000000");
+        assertThat(TradingFeeCalculator.commission(amount, "KR", new BigDecimal("0.0002")))
+                .isEqualTo(new BigDecimal("200"));
+        assertThat(TradingFeeCalculator.commission(amount, "US", new BigDecimal("0.0005")))
+                .isEqualTo(new BigDecimal("500.00"));
+    }
+
+    @Test
+    void 요율이_null이거나_0이하면_기본값으로_폴백한다() {
+        // 수수료를 못 구해 주문이 막히면 손절이 멈춘다 — 조용히 기본값으로 떨어진다.
+        BigDecimal amount = new BigDecimal("1000000");
+        assertThat(TradingFeeCalculator.commission(amount, "KR", null))
+                .isEqualTo(TradingFeeCalculator.commission(amount, "KR"));
+        assertThat(TradingFeeCalculator.commission(amount, "KR", BigDecimal.ZERO))
+                .isEqualTo(TradingFeeCalculator.commission(amount, "KR"));
+        assertThat(TradingFeeCalculator.commission(amount, "US", new BigDecimal("-0.001")))
+                .isEqualTo(TradingFeeCalculator.commission(amount, "US"));
+    }
+
+    @Test
+    void 기본_요율은_실측값으로_고정() {
+        assertThat(TradingFeeCalculator.defaultCommissionRate("KR")).isEqualByComparingTo("0.00015");
+        assertThat(TradingFeeCalculator.defaultCommissionRate("US")).isEqualByComparingTo("0.001");
+        assertThat(TradingFeeCalculator.defaultCommissionRate(null)).isEqualByComparingTo("0.00015");
+    }
+
+    @Test
+    void 요율_주입이_반올림_규칙을_바꾸지_않는다() {
+        // #861 — KR 정수(원), US 소수 2자리(센트).
+        assertThat(TradingFeeCalculator.commission(new BigDecimal("333333"), "KR", new BigDecimal("0.00015")))
+                .isEqualTo(new BigDecimal("50"));
+        assertThat(TradingFeeCalculator.commission(new BigDecimal("500"), "US", new BigDecimal("0.001")))
+                .isEqualTo(new BigDecimal("0.50"));
+    }
 }
