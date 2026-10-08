@@ -204,22 +204,61 @@ public class AutoTradeScheduler {
      * US 는 breadth 를 계산할 수 없고, 표본 부족은 {@link MarketRegimeGate} 가 '신호 없음'
      * 으로 보고 통과시킨다.
      */
+    /** US 레짐 프록시 — 토스가 US ETF 캔들을 주지 않아 야후 경로를 쓴다(#828 QA 실측). */
+    private static final String US_INDEX = "SPY";
+
+    /**
+     * 해당 시장의 시장상황 게이트(#879, #881). 틱 로컬 캐시로 시장당 1회만 조회한다.
+     *
+     * <p>시장마다 <b>그 시장에서 실제로 구할 수 있는 신호</b>를 쓴다.
+     * <ul>
+     *   <li><b>KR</b> — 전종목 breadth(3,699종목). 임계 {@code min-breadth-pct}.</li>
+     *   <li><b>US</b> — SPY 일간 수익률. 임계 {@code index-min-daily-pct}.
+     *       US 는 breadth 를 계산할 수 없다: {@code us_universe} 에 시총·유동성이 없어
+     *       대표 종목을 고를 근거가 없고, 기준일 join 표본이 0~7종목이다(실측).</li>
+     * </ul>
+     *
+     * <p>신호를 못 구하면 통과시킨다 — 레짐 신호 부재로 매수가 막히는 것보다 종목별
+     * 게이트(저평가·펀더멘털·인기·상대강세·급등필터)에 맡기는 쪽이 낫다.
+     */
     private boolean regimeOpen(String market, Map<String, Boolean> cache) {
         String key = market == null ? "KR" : market.toUpperCase();
         Boolean cached = cache.get(key);
         if (cached != null) {
             return cached;
         }
-        Map<String, Object> breadth = dailyMapper.breadth(key, props.gate().minBreadthSample());
+        boolean open = "US".equals(key) ? usRegimeOpen() : krRegimeOpen();
+        cache.put(key, open);
+        return open;
+    }
+
+    private boolean krRegimeOpen() {
+        Map<String, Object> breadth = dailyMapper.breadth("KR", props.gate().minBreadthSample());
         long up = numberOf(breadth == null ? null : breadth.get("UP"));
         long total = numberOf(breadth == null ? null : breadth.get("TOTAL"));
         int breadthPct = total > 0 ? (int) Math.round(up * 100.0 / total) : 0;
-        boolean open = MarketRegimeGate.evaluate(breadthPct, (int) total, props.gate());
         if (total < props.gate().minBreadthSample()) {
-            log.info("{} 시장상황 신호 없음(표본 {}종목 < {}) — 게이트 통과 처리",
-                    key, total, props.gate().minBreadthSample());
+            log.info("KR 시장상황 신호 없음(표본 {}종목 < {}) — 게이트 통과 처리",
+                    total, props.gate().minBreadthSample());
         }
-        cache.put(key, open);
+        return MarketRegimeGate.evaluate(breadthPct, (int) total, props.gate());
+    }
+
+    /**
+     * SPY 일간 수익률로 판정(#881). windowDays=1 이면 마지막 2개 종가로 계산되므로
+     * 추가 API 가 필요 없다.
+     */
+    private boolean usRegimeOpen() {
+        Double dailyPct = valuationClient.getIndexReturnPct(US_INDEX, 1);
+        if (dailyPct == null) {
+            log.info("US 시장상황 신호 없음(SPY 조회 실패) — 게이트 통과 처리");
+            return true;
+        }
+        boolean open = dailyPct >= props.gate().indexMinDailyPct();
+        if (!open) {
+            log.info("US 시장상황 게이트 차단 — SPY {}% < 임계 {}%",
+                    String.format("%.2f", dailyPct), props.gate().indexMinDailyPct());
+        }
         return open;
     }
 

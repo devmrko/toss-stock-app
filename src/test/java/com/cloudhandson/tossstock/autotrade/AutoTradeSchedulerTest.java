@@ -61,7 +61,7 @@ class AutoTradeSchedulerTest {
         return new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI",
                 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000),
-                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100));
+                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, -1.5));
     }
 
     @BeforeEach
@@ -607,9 +607,10 @@ class AutoTradeSchedulerTest {
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
         when(candidateMapper.findActive()).thenReturn(List.of(us));
-        // KR 은 임계 미만(10%), US 는 표본 부족(7종목) → 신호 없음 → 통과
-        when(dailyMapper.breadth(eq("KR"), anyInt())).thenReturn(Map.of("UP", 10L, "TOTAL", 100L));
-        when(dailyMapper.breadth(eq("US"), anyInt())).thenReturn(Map.of("UP", 3L, "TOTAL", 7L));
+        // KR 은 임계 미만(10%) — 예전이라면 scanCandidates 자체가 스킵됐다.
+        // US 는 SPY 일간 수익률로 판정한다(#881): +0.5% 로 임계(-1.5%) 통과.
+        when(dailyMapper.breadth(eq("KR"), anyInt())).thenReturn(Map.of("UP", 10L, "TOTAL", 3699L));
+        when(valuationClient.getIndexReturnPct("SPY", 1)).thenReturn(0.5);
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
         when(valuationClient.getValuation("TSM", "US"))
                 .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
@@ -618,9 +619,7 @@ class AutoTradeSchedulerTest {
 
         scheduler.tick();
 
-        // KR breadth 10% 로는 예전이라면 scanCandidates 자체가 스킵됐다.
-        // 이제는 US 후보가 그 시장 기준으로 평가돼 매수 경로까지 간다.
-        verify(dailyMapper).breadth(eq("US"), anyInt());
+        verify(valuationClient).getIndexReturnPct("SPY", 1);
         verify(orderExecutor).buy(eq("TSM"), eq("US"), any(), any(), anyString());
     }
 
@@ -659,5 +658,67 @@ class AutoTradeSchedulerTest {
         scheduler.tick();
 
         verify(dailyMapper, org.mockito.Mockito.times(1)).breadth(eq("KR"), anyInt());
+    }
+
+    // ---- #881 US 레짐은 SPY 지수로 ----
+
+    private AutoTradeCandidate usCandidate() {
+        AutoTradeCandidate us = new AutoTradeCandidate();
+        us.setSymbol("TSM");
+        us.setMarket("US");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(candidateMapper.findActive()).thenReturn(List.of(us));
+        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
+        when(valuationClient.getValuation("TSM", "US"))
+                .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
+        when(priceCache.get(List.of("TSM")))
+                .thenReturn(List.of(new TossPrice("TSM", "102000", "USD", null)));
+        return us;
+    }
+
+    @Test
+    void SPY가_임계값_미만이면_US_매수가_막힌다() {
+        // 인수조건 2 — #879 에서는 US 레짐 신호가 아예 없어 무조건 통과했다.
+        // 임계 -1.5% 는 SPY 최근 251거래일 분포의 하위 4% 분위(-1.52%)에 맞춘 값이다.
+        usCandidate();
+        when(valuationClient.getIndexReturnPct("SPY", 1)).thenReturn(-2.7);   // 1년 최저 수준
+
+        scheduler.tick();
+
+        verify(orderExecutor, org.mockito.Mockito.never()).buy(any(), any(), any(), any(), anyString());
+    }
+
+    @Test
+    void SPY가_임계값_이상이면_US_매수가_진행된다() {
+        usCandidate();
+        when(valuationClient.getIndexReturnPct("SPY", 1)).thenReturn(-1.4);   // 임계(-1.5) 바로 위
+
+        scheduler.tick();
+
+        verify(orderExecutor).buy(eq("TSM"), eq("US"), any(), any(), anyString());
+    }
+
+    @Test
+    void SPY_조회_실패시_US_매수는_통과시킨다() {
+        // 인수조건 3 — 레짐 신호를 못 구해 매수가 막히는 것보다 종목별 게이트에 맡긴다.
+        usCandidate();
+        when(valuationClient.getIndexReturnPct("SPY", 1)).thenReturn(null);
+
+        scheduler.tick();
+
+        verify(orderExecutor).buy(eq("TSM"), eq("US"), any(), any(), anyString());
+    }
+
+    @Test
+    void US_판정에_KR_breadth를_조회하지_않는다() {
+        // 인수조건 1·5 — 시장별로 그 시장의 신호만 본다.
+        usCandidate();
+        when(valuationClient.getIndexReturnPct("SPY", 1)).thenReturn(0.5);
+
+        scheduler.tick();
+
+        verify(dailyMapper, org.mockito.Mockito.never()).breadth(eq("KR"), anyInt());
     }
 }

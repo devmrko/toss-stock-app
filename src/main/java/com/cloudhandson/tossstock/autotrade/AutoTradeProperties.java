@@ -53,7 +53,11 @@ public record AutoTradeProperties(
      * @param minBreadthSample breadth 집계 최소 표본(#879). 미만이면 '신호 없음'으로 보고
      *                         통과시킨다. 기본 100 — 기존 breadth(minCoverage=100) 와 같은 수치를
      *                         써서 새 임계값을 발명하지 않는다.
+     * @param indexMinDailyPct US 레짐 임계(#881). SPY 일간 수익률이 이 값 미만이면 US 매수를
+     *                         막는다. 기본 -1.5 — SPY 최근 251거래일 분포의 하위 4%% 분위
+     *                         (-1.52%%)에 맞춘 값으로, KR breadth 20%% 와 같은 엄격도
+     *                         (연 10~12일 차단)를 의도했다.
      */
-    public record Gate(int minBreadthPct, int minBreadthSample) {
+    public record Gate(int minBreadthPct, int minBreadthSample, double indexMinDailyPct) {
     }
 }
