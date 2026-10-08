@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class MarketRegimeGateTest {
 
-    private static final AutoTradeProperties.Gate GATE = new AutoTradeProperties.Gate(35, 100, -1.5);
+    private static final AutoTradeProperties.Gate GATE = new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2);
 
     /** 표본이 충분한 경우(KR 은 3,699종목). */
     private static final int ENOUGH = 3699;

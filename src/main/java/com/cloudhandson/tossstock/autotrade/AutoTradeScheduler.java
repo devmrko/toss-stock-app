@@ -245,19 +245,31 @@ public class AutoTradeScheduler {
     }
 
     /**
-     * SPY 일간 수익률로 판정(#881). windowDays=1 이면 마지막 2개 종가로 계산되므로
-     * 추가 API 가 필요 없다.
+     * SPY 일간 수익률을 <b>최근 실현변동성으로 정규화</b>해 판정한다(#883).
+     *
+     * <p>#881 의 고정 −1.5% 는 연도별 차단율이 통제되지 않았다(실측 10년: SPY
+     * 0.8%~15.9%, KOSPI 1.7%~23.1%). 2.5σ 로 정규화하면 1.3% 내외로 안정되고,
+     * 필요한 과거가 {@code indexVolWindowDays} 뿐이라 긴 캘리브레이션 창이 불필요하다.
+     *
+     * <p><b>한계</b>: 이는 캘리브레이션 교정이고 예측력 교정이 아니다. 하락 기반 게이트는
+     * 2개 시장·10년·7가지 정의에서 수익률을 깎고 손실폭만 줄였다
+     * (docs/analysis/2026-10-09-regime-gate-horizon.md). 목적은 "극단 꼬리 보호만
+     * 남긴다"를 긴 창 없이 달성하는 것이다.
      */
     private boolean usRegimeOpen() {
-        Double dailyPct = valuationClient.getIndexReturnPct(US_INDEX, 1);
-        if (dailyPct == null) {
+        AutoTradeProperties.Gate g = props.gate();
+        IndexRiskSignal sig = valuationClient.getIndexRiskSignal(US_INDEX, g.indexVolWindowDays());
+        if (sig == null) {
             log.info("US 시장상황 신호 없음(SPY 조회 실패) — 게이트 통과 처리");
             return true;
         }
-        boolean open = dailyPct >= props.gate().indexMinDailyPct();
+        double vol = Math.max(sig.volPct(), g.indexVolFloorPct());
+        double threshold = -g.indexVolSigma() * vol;
+        boolean open = sig.dailyPct() >= threshold;
         if (!open) {
-            log.info("US 시장상황 게이트 차단 — SPY {}% < 임계 {}%",
-                    String.format("%.2f", dailyPct), props.gate().indexMinDailyPct());
+            log.info("US 시장상황 게이트 차단 — SPY {}% < 임계 {}% ({}σ x 변동성 {}%)",
+                    String.format("%.2f", sig.dailyPct()), String.format("%.2f", threshold),
+                    g.indexVolSigma(), String.format("%.2f", vol));
         }
         return open;
     }

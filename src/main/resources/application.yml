@@ -163,13 +163,17 @@ auto-trade:
     # 실측(2026-10-08): 기준일 join 에 KR 3,699종목 / US 7종목 — US 는 계산 불가다.
     # 표본 수로 판단하므로 US 커버리지가 늘면 코드 변경 없이 게이트가 켜진다.
     min-breadth-sample: ${AUTO_TRADE_GATE_MIN_BREADTH_SAMPLE:100}
-    # #881 US 레짐 임계 — SPY 일간 수익률이 이 값 미만이면 US 매수를 막는다.
-    # US 는 breadth 를 계산할 수 없다(us_universe 에 시총·유동성이 없어 대표 종목을 고를
-    # 근거가 없고, 기준일 join 표본이 0~7종목). 대신 이미 작동하는 SPY 경로(야후)를 쓴다.
-    # 실측 캘리브레이션: SPY 최근 251거래일 일간수익률 하위 1%=-2.04 / 2%=-1.70 /
-    # 4%=-1.52 / 10%=-0.99, 최저 -2.70. KR breadth 20%(극단일만 차단)과 같은 엄격도로
-    # 하위 4% 분위에 맞춰 -1.5 로 둔다(연 10~12일 차단).
-    index-min-daily-pct: ${AUTO_TRADE_GATE_INDEX_MIN_DAILY_PCT:-1.5}
+    # #883 US 레짐 임계 — SPY 일간 수익률 < -(sigma x 최근 N일 실현변동성) 이면 US 매수 차단.
+    # #881 의 고정 -1.5% 를 대체한다. 고정 % 는 연도별 차단율이 통제되지 않았다(실측 10년):
+    #   고정 -1.5%  차단율  SPY 0.8%(2017)~15.9%(2022) / KOSPI 1.7%(2017)~23.1%(2026)
+    #   2.5 시그마  차단율  SPY 0.0~3.2% / KOSPI 0.0~2.0%   ← 약 7배 안정
+    # 정규화하면 필요한 과거가 20일뿐이라 긴 캘리브레이션 창·연 1회 재조정이 불필요하다.
+    # 한계: 이는 '캘리브레이션' 교정이고 '예측력' 교정이 아니다 —
+    #   docs/analysis/2026-10-09-regime-gate-horizon.md 참조.
+    index-vol-sigma: ${AUTO_TRADE_GATE_INDEX_VOL_SIGMA:2.5}
+    index-vol-window-days: ${AUTO_TRADE_GATE_INDEX_VOL_WINDOW_DAYS:20}
+    # 변동성 하한 — 데이터 이상으로 변동성이 0 에 가까울 때 게이트가 과민해지는 것 방지.
+    index-vol-floor-pct: ${AUTO_TRADE_GATE_INDEX_VOL_FLOOR_PCT:0.2}
 
 # 레인지(박스권) 스윙매매 — 2번째 자동매매 트랙 (#818). 모멘텀(#808)과 예산·슬롯·DB 완전 분리.
 # dry-run 기본값 true — 반드시 명시적으로 false 로 바꿔야 실주문 나감.

@@ -61,7 +61,7 @@ class AutoTradeSchedulerTest {
         return new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI",
                 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000),
-                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, -1.5));
+                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2));
     }
 
     @BeforeEach
@@ -608,9 +608,10 @@ class AutoTradeSchedulerTest {
         when(positionMapper.countHolding()).thenReturn(0);
         when(candidateMapper.findActive()).thenReturn(List.of(us));
         // KR 은 임계 미만(10%) — 예전이라면 scanCandidates 자체가 스킵됐다.
-        // US 는 SPY 일간 수익률로 판정한다(#881): +0.5% 로 임계(-1.5%) 통과.
+        // US 는 SPY 를 변동성 정규화해 판정한다(#883): 일간 +0.5%, 변동성 1.0% → 통과.
         when(dailyMapper.breadth(eq("KR"), anyInt())).thenReturn(Map.of("UP", 10L, "TOTAL", 3699L));
-        when(valuationClient.getIndexReturnPct("SPY", 1)).thenReturn(0.5);
+        when(valuationClient.getIndexRiskSignal(eq("SPY"), anyInt()))
+                .thenReturn(new IndexRiskSignal(0.5, 1.0));
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
         when(valuationClient.getValuation("TSM", "US"))
                 .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
@@ -619,7 +620,7 @@ class AutoTradeSchedulerTest {
 
         scheduler.tick();
 
-        verify(valuationClient).getIndexReturnPct("SPY", 1);
+        verify(valuationClient).getIndexRiskSignal(eq("SPY"), anyInt());
         verify(orderExecutor).buy(eq("TSM"), eq("US"), any(), any(), anyString());
     }
 
@@ -660,9 +661,9 @@ class AutoTradeSchedulerTest {
         verify(dailyMapper, org.mockito.Mockito.times(1)).breadth(eq("KR"), anyInt());
     }
 
-    // ---- #881 US 레짐은 SPY 지수로 ----
+    // ---- #883 US 레짐 임계는 변동성 정규화 ----
 
-    private AutoTradeCandidate usCandidate() {
+    private void usCandidate() {
         AutoTradeCandidate us = new AutoTradeCandidate();
         us.setSymbol("TSM");
         us.setMarket("US");
@@ -675,15 +676,18 @@ class AutoTradeSchedulerTest {
                 .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
         when(priceCache.get(List.of("TSM")))
                 .thenReturn(List.of(new TossPrice("TSM", "102000", "USD", null)));
-        return us;
+    }
+
+    private void spySignal(double dailyPct, double volPct) {
+        when(valuationClient.getIndexRiskSignal(eq("SPY"), anyInt()))
+                .thenReturn(new IndexRiskSignal(dailyPct, volPct));
     }
 
     @Test
-    void SPY가_임계값_미만이면_US_매수가_막힌다() {
-        // 인수조건 2 — #879 에서는 US 레짐 신호가 아예 없어 무조건 통과했다.
-        // 임계 -1.5% 는 SPY 최근 251거래일 분포의 하위 4% 분위(-1.52%)에 맞춘 값이다.
+    void 변동성_대비_극단_하락이면_US_매수가_막힌다() {
+        // 인수조건 1 — 변동성 1.0% x 2.5σ = 임계 -2.5%. 일간 -3.0% 는 그 미만.
         usCandidate();
-        when(valuationClient.getIndexReturnPct("SPY", 1)).thenReturn(-2.7);   // 1년 최저 수준
+        spySignal(-3.0, 1.0);
 
         scheduler.tick();
 
@@ -691,9 +695,9 @@ class AutoTradeSchedulerTest {
     }
 
     @Test
-    void SPY가_임계값_이상이면_US_매수가_진행된다() {
+    void 임계_안쪽_하락이면_US_매수가_진행된다() {
         usCandidate();
-        when(valuationClient.getIndexReturnPct("SPY", 1)).thenReturn(-1.4);   // 임계(-1.5) 바로 위
+        spySignal(-2.0, 1.0);   // 임계 -2.5% 안쪽
 
         scheduler.tick();
 
@@ -701,10 +705,35 @@ class AutoTradeSchedulerTest {
     }
 
     @Test
-    void SPY_조회_실패시_US_매수는_통과시킨다() {
-        // 인수조건 3 — 레짐 신호를 못 구해 매수가 막히는 것보다 종목별 게이트에 맡긴다.
+    void 고변동성기엔_같은_하락이_통과한다() {
+        // 인수조건 2의 핵심 — 이게 고정 임계와 갈리는 지점이다.
+        // 일간 -3.0% 는 변동성 1.0% 에서는 차단됐지만, 변동성 2.0% 에서는 임계가
+        // -5.0% 로 느슨해져 통과한다. 고정 -1.5% 라면 두 경우 모두 차단이었다.
         usCandidate();
-        when(valuationClient.getIndexReturnPct("SPY", 1)).thenReturn(null);
+        spySignal(-3.0, 2.0);
+
+        scheduler.tick();
+
+        verify(orderExecutor).buy(eq("TSM"), eq("US"), any(), any(), anyString());
+    }
+
+    @Test
+    void 변동성이_비정상적으로_작으면_하한이_적용된다() {
+        // 인수조건 3 — 변동성 0.05% 면 임계가 -0.125% 로 붙어 아무 하락일이나 차단된다.
+        // 하한 0.2% 가 적용돼 임계 -0.5% → 일간 -0.4% 는 통과.
+        usCandidate();
+        spySignal(-0.4, 0.05);
+
+        scheduler.tick();
+
+        verify(orderExecutor).buy(eq("TSM"), eq("US"), any(), any(), anyString());
+    }
+
+    @Test
+    void SPY_신호가_없으면_US_매수는_통과시킨다() {
+        // 인수조건 4
+        usCandidate();
+        when(valuationClient.getIndexRiskSignal(eq("SPY"), anyInt())).thenReturn(null);
 
         scheduler.tick();
 
@@ -713,9 +742,9 @@ class AutoTradeSchedulerTest {
 
     @Test
     void US_판정에_KR_breadth를_조회하지_않는다() {
-        // 인수조건 1·5 — 시장별로 그 시장의 신호만 본다.
+        // 인수조건 6 — KR 판정은 변경되지 않고, 서로 섞이지 않는다.
         usCandidate();
-        when(valuationClient.getIndexReturnPct("SPY", 1)).thenReturn(0.5);
+        spySignal(0.5, 1.0);
 
         scheduler.tick();
 

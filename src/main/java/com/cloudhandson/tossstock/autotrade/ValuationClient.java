@@ -54,6 +54,7 @@ public class ValuationClient {
     private volatile String yahooCrumb;
     private final Map<String, Cached<Valuation>> valuationCache = new ConcurrentHashMap<>();
     private final Map<String, Cached<Double>> indexReturnCache = new ConcurrentHashMap<>();
+    private final Map<String, Cached<IndexRiskSignal>> riskSignalCache = new ConcurrentHashMap<>();
 
     private record Cached<T>(T value, Instant fetchedAt) {
         boolean expired() {
@@ -297,6 +298,76 @@ public class ValuationClient {
         Double fresh = fetchIndexReturnPct(symbol, windowDays);
         indexReturnCache.put(key, new Cached<>(fresh, Instant.now()));
         return fresh;
+    }
+
+    /**
+     * 지수의 일간 수익률 + 최근 실현변동성(#883). 실패·데이터부족이면 null.
+     *
+     * <p>고정 % 임계는 연도별 차단율이 통제되지 않는다(실측: SPY 0.8~15.9%,
+     * KOSPI 1.7~23.1%). 변동성으로 정규화하면 1.3% 내외로 안정되고, 필요한 과거가
+     * 20일로 줄어 긴 캘리브레이션 창이 불필요해진다.
+     *
+     * <p>{@link #getIndexReturnPct} 와 같은 야후 호출·같은 캐시를 쓰지 않고 별도
+     * 캐시를 둔다 — 반환형이 다르고, 상대강세 판정(#828)의 구간 수익률과 용도가 다르다.
+     */
+    public IndexRiskSignal getIndexRiskSignal(String symbol, int volWindowDays) {
+        String key = symbol + ":vol:" + volWindowDays;
+        Cached<IndexRiskSignal> cached = riskSignalCache.get(key);
+        if (cached != null && !cached.expired()) {
+            return cached.value();
+        }
+        IndexRiskSignal fresh = fetchIndexRiskSignal(symbol, volWindowDays);
+        riskSignalCache.put(key, new Cached<>(fresh, Instant.now()));
+        return fresh;
+    }
+
+    private IndexRiskSignal fetchIndexRiskSignal(String symbol, int volWindowDays) {
+        List<Double> closes = fetchCloses(symbol);
+        if (closes == null || closes.size() < volWindowDays + 2) {
+            return null;
+        }
+        int n = closes.size();
+        List<Double> rets = new ArrayList<>();
+        for (int i = n - volWindowDays; i < n; i++) {
+            double prev = closes.get(i - 1);
+            if (prev == 0) {
+                return null;
+            }
+            rets.add((closes.get(i) - prev) / prev * 100);
+        }
+        double mean = rets.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        double var = rets.stream().mapToDouble(r -> (r - mean) * (r - mean)).sum() / (rets.size() - 1);
+        return new IndexRiskSignal(rets.get(rets.size() - 1), Math.sqrt(var));
+    }
+
+    /** 야후 6개월 일별 종가. 실패 시 null. (#883 — 구간수익률·변동성이 공유) */
+    private List<Double> fetchCloses(String symbol) {
+        try {
+            HttpRequest req = HttpRequest.newBuilder(
+                    URI.create("https://query1.finance.yahoo.com/v8/finance/chart/" + symbol
+                            + "?range=6mo&interval=1d"))
+                    .header("User-Agent", "Mozilla/5.0")
+                    .timeout(TIMEOUT)
+                    .GET().build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() >= 400) {
+                return null;
+            }
+            JsonNode results = om.readTree(res.body()).path("chart").path("result");
+            if (!results.isArray() || results.isEmpty()) {
+                return null;
+            }
+            List<Double> closes = new ArrayList<>();
+            for (JsonNode c : results.get(0).path("indicators").path("quote").path(0).path("close")) {
+                if (!c.isNull()) {
+                    closes.add(c.asDouble());
+                }
+            }
+            return closes;
+        } catch (Exception e) {
+            log.warn("지수 종가 조회 실패(symbol={}): {}", symbol, e.toString());
+            return null;
+        }
     }
 
     private Double fetchIndexReturnPct(String symbol, int windowDays) {

@@ -41,7 +41,7 @@ class AutoTradeControllerTest {
                 BigDecimal.valueOf(600_000), 15.0, 10.0, 10.0, "", "0 * * * * *", 20, 1.0, 1.5,
                 30.0, 3.0, 200.0, BigDecimal.valueOf(300_000_000), BigDecimal.valueOf(200_000),
                 20, 2, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON",
-                new AutoTradeProperties.Gate(20, 100, -1.5));
+                new AutoTradeProperties.Gate(20, 100, 2.5, 20, 0.2));
     }
 
     @BeforeEach
