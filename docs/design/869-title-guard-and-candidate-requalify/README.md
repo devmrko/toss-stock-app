@@ -69,6 +69,26 @@ LLM 판정보다 **먼저** 평가한다. 통과를 늘리는 일은 절대 없�
 (= 구 게이트 등록분)를 비활성화한다. `촉매점수` 는 #865 이후 코드만 기록하므로
 **신·구 구분자로 신뢰할 수 있다**.
 
+#### 2.2.1 신 게이트 등록분에도 제목 가드를 적용한다 (1차 배포에서 발견)
+
+1차 배포 후 실측: 29건 중 28건이 해제됐고 **`443060` 만 남았다** — 노트에
+`촉매점수 3/4` 가 있어 "새 기준으로 등록됨"으로 분류됐기 때문이다. 그런데 이 후보가
+바로 §1의 인수 결함 그 자체다. 즉 **§2.1 가드는 신규 등록만 막고, 가드 도입 전에 신
+게이트로 이미 들어온 후보는 거르지 못한다**.
+
+노트에는 제목이 그대로 보존돼 있다(`자동발견(…, 촉매점수 3/4): <제목>`). 따라서
+재심사에서 `): ` 뒤의 제목에 §2.1 가드를 적용해 해제한다. 해제 사유 판정 순서:
+
+```
+1. 노트가 "자동발견(" 로 시작하지 않음        → 유지 (수동 등록, 건드리지 않는다)
+2. "촉매점수" 미포함                          → 해제 "구 게이트 등록분"
+3. 제목이 LOSS 가드에 걸림                    → 해제 "제목판정 LOSS"
+4. 제목이 BUYER 가드에 걸림                   → 해제 "제목판정 BUYER"
+5. 그 외                                      → 유지
+```
+
+함수명은 `requalifyCandidates()` 로 한다 — 구 게이트 전용이 아니게 됐다.
+
 **자가치유형**이다 — 해당 종목에 여전히 자격 있는 뉴스가 있으면 15분 내
 `discovery-cron` 이 새 기준으로 다시 등록한다. 수동 개입·백필이 필요 없다.
 
@@ -91,7 +111,7 @@ LLM 판정보다 **먼저** 평가한다. 통과를 늘리는 일은 절대 없�
 
 ```
 CandidateDiscoveryService.refresh()
-  ├─ requalifyLegacyCandidates()   ← 조치 2 (신규)
+  ├─ requalifyCandidates()         ← 조치 2 (신규, §2.2 + §2.2.1)
   ├─ addNewCandidates()
   │    └─ CatalystQualifier.qualify(facts, title)
   │           ├─ TitleGuard.buyerSide(title)  → 차단   ← 조치 1
@@ -111,7 +131,9 @@ CandidateDiscoveryService.refresh()
 | `TitleGuard.buyerSide(String)` | `autotrade/TitleGuard.java` (신규) | 제목이 "대상이 돈 쓰는 쪽"임을 확정적으로 보이는가 | 순수 | → `boolean` |
 | `TitleGuard.lossSide(String)` | 동일 | 제목이 적자·손실을 확정적으로 보이는가 | 순수 | → `boolean` |
 | `CatalystQualifier.qualify(NewsFacts, String)` | 기존 수정 | 가드 2개를 facts 규칙보다 먼저 평가 | 순수 | 시그니처 변경 |
-| `CandidateDiscoveryService.requalifyLegacyCandidates()` | 기존 수정 | 구 게이트 등록분 비활성화 | I/O | 로그로 사유 남김 |
+| `CandidateDiscoveryService.requalifyCandidates()` | 기존 수정 | 자격 미달 후보 비활성화 | I/O | 로그로 사유 남김 |
+| `CandidateDiscoveryService.disqualifyReason(String note)` | 동일 | §2.2.1 판정 순서대로 해제 사유 산출 | 순수 | 유지면 null |
+| `CandidateDiscoveryService.titleOf(String note)` | 동일 | 노트에서 `): ` 뒤 제목 추출 | 순수 | 형식 다르면 노트 전체 |
 
 신·구 판별은 **SQL 대신 기존 `candidateMapper.findActive()` 결과를 메모리에서 필터링**한다.
 활성 후보는 수십 건 규모이고 `removeFadedCandidates()` 가 이미 같은 목록을 쓰므로, 노트
@@ -131,6 +153,8 @@ CandidateDiscoveryService.refresh()
 6. 가드는 **차단만 추가**한다 — 기존에 통과하던 정상 기사를 추가로 막는 경우를
    테스트로 고정하고, 기존에 차단된 기사를 통과시키는 경로는 없다.
 7. 수동 등록 후보는 재심사로 비활성화되지 않는다.
+8. 가드 도입 전에 신 게이트로 등록된 후보(`촉매점수` 있음)도 제목 가드로 해제된다
+   — 1차 배포에서 `443060` 이 남은 것으로 확인된 누락(§2.2.1).
 
 ## 5. 테스트 계획
 
@@ -151,7 +175,8 @@ CandidateDiscoveryService.refresh()
 
 `CandidateDiscoveryServiceTest`:
 - 구 노트(`자동발견(…): 제목`, 촉매점수 없음) → 비활성화
-- 신 노트(`자동발견(…, 촉매점수 3/4): 제목`) → 유지
+- 신 노트(`자동발견(…, 촉매점수 3/4): 정상 수주 제목`) → 유지
+- 신 노트인데 제목이 가드에 걸림(`…3315억원에 인수`) → **비활성화**(인수조건 8)
 - 수동 노트(`자동발견(` 아님) → 유지
 
 ## 6. 리스크 / 되돌리기
@@ -163,7 +188,7 @@ CandidateDiscoveryService.refresh()
 | `촉매점수` 문자열에 의존하는 신·구 판별 | #865 이후 코드만 기록하므로 현재는 유일한 구분자. 포맷 변경 시 이 로직도 함께 고칠 것(주석으로 명시) |
 
 되돌리기: `qualify` 의 가드 2줄 제거(시그니처는 유지해도 무해),
-`requalifyLegacyCandidates()` 호출 1줄 제거.
+`requalifyCandidates()` 호출 1줄 제거.
 
 ## 7. 범위 밖
 

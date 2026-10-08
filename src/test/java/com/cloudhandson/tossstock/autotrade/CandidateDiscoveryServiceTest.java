@@ -226,15 +226,52 @@ class CandidateDiscoveryServiceTest {
     }
 
     @Test
-    void 새_게이트로_등록된_후보는_유지된다() {
+    void 새_게이트로_등록된_정상_후보는_유지된다() {
         when(candidateMapper.findActive()).thenReturn(List.of(
-                candidate("443060", "자동발견(2026-10-08T17:15:01, 촉매점수 3/4): HD현대마린솔루션 수주")));
+                candidate("267260", "자동발견(2026-10-08T17:15:01, 촉매점수 3/4): "
+                        + "HD건설기계, 美 데이터센터 발전엔진 '롱블록' 수주…3900억 규모")));
         when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
-        when(newsFadeDetector.hasNewsFaded("443060")).thenReturn(false);
+        when(newsFadeDetector.hasNewsFaded("267260")).thenReturn(false);
 
         service.refresh();
 
-        verify(candidateMapper, never()).deactivate("443060");
+        verify(candidateMapper, never()).deactivate("267260");
+    }
+
+    @Test
+    void 새_게이트로_등록됐어도_제목이_가드에_걸리면_해제된다() {
+        // 인수조건 8 — 1차 배포에서 443060 만 남은 누락. 노트에 촉매점수가 있어 '새 기준
+        // 등록'으로 분류됐지만 그게 바로 가드가 잡으려던 인수 결함 그 자체였다.
+        when(candidateMapper.findActive()).thenReturn(List.of(
+                candidate("443060", "자동발견(2026-10-08T17:15:01.516288, 촉매점수 3/4): "
+                        + "HD현대마린솔루션, 美 엔진 기업 '골텐스' 3315억원에 인수")));
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
+
+        service.refresh();
+
+        verify(candidateMapper).deactivate("443060");
+    }
+
+    @Test
+    void 해제사유_판정_순서() {
+        assertThat(CandidateDiscoveryService.disqualifyReason("수동 등록: 장기 관찰")).isNull();
+        assertThat(CandidateDiscoveryService.disqualifyReason("자동발견(t): 아무 제목"))
+                .isEqualTo("구 게이트 등록분");
+        assertThat(CandidateDiscoveryService.disqualifyReason(
+                "자동발견(t, 촉매점수 2/4): A사, 2조 적자")).isEqualTo("제목판정 LOSS");
+        assertThat(CandidateDiscoveryService.disqualifyReason(
+                "자동발견(t, 촉매점수 2/4): A사, B사 3315억원에 인수")).isEqualTo("제목판정 BUYER");
+        assertThat(CandidateDiscoveryService.disqualifyReason(
+                "자동발견(t, 촉매점수 2/4): A사, 3900억 규모 수주")).isNull();
+        assertThat(CandidateDiscoveryService.disqualifyReason(null)).isNull();
+    }
+
+    @Test
+    void 노트에서_제목만_떼어낸다() {
+        assertThat(CandidateDiscoveryService.titleOf("자동발견(t, 촉매점수 3/4): 제목 부분"))
+                .isEqualTo("제목 부분");
+        // 형식이 다르면 노트 전체를 제목으로 본다(가드가 과차단 쪽으로 기운다).
+        assertThat(CandidateDiscoveryService.titleOf("형식이 다른 노트")).isEqualTo("형식이 다른 노트");
     }
 
     @Test

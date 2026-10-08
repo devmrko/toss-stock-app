@@ -69,34 +69,69 @@ public class CandidateDiscoveryService {
 
     @Scheduled(cron = "${auto-trade.discovery-cron:0 */15 * * * *}", zone = "Asia/Seoul")
     public void refresh() {
-        requalifyLegacyCandidates();
+        requalifyCandidates();
         addNewCandidates();
         removeFadedCandidates();
     }
 
+    /** 자동발견 후보의 노트 접두사. 이 접두사가 없으면 수동 등록으로 본다. */
+    private static final String AUTO_NOTE_PREFIX = "자동발견(";
+
+    /** #865 이후 코드만 노트에 기록하는 문자열 — 신·구 게이트 구분자. */
+    private static final String NEW_GATE_MARKER = "촉매점수";
+
     /**
-     * #869 구 게이트(통과율 37%)로 등록된 후보를 비활성화한다. #865 의 자격 게이트는 신규
-     * 등록만 거르므로, 그 전에 들어온 후보(노브랜드 버거 매장 확대, 발행어음 특판,
+     * #869 자격 미달 후보를 비활성화한다. 두 경우를 거른다.
+     *
+     * <p>① 구 게이트(통과율 37%)로 등록된 후보 — #865 의 자격 게이트는 신규 등록만
+     * 거르므로, 그 전에 들어온 후보(노브랜드 버거 매장 확대, 발행어음 특판,
      * 'LG엔솔 리튬 공급받기로' 등)가 그대로 매수 대상으로 남아 있었다.
      *
-     * <p>신·구 판별은 노트의 "촉매점수" 문자열로 한다 — #865 이후 코드만 기록하므로 현재
-     * 유일한 구분자다(노트 포맷을 바꾸면 이 로직도 함께 고칠 것).
+     * <p>② 신 게이트로 등록됐지만 제목 가드에 걸리는 후보 — 1차 배포 실측에서 29건 중
+     * 443060(HD현대마린솔루션 '3315억원에 인수')만 남았다. 노트에 촉매점수가 있어
+     * "새 기준 등록"으로 분류됐지만 그게 바로 가드가 잡으려던 결함 그 자체였다.
+     * 노트에 제목이 보존돼 있으므로({@code 자동발견(…): <제목>}) 거기에 가드를 적용한다.
      *
      * <p>자가치유형이다 — 자격 있는 뉴스가 여전히 있으면 바로 아래 addNewCandidates 가
-     * 새 기준으로 다시 등록한다. 수동 등록 후보는 건드리지 않는다.
+     * 새 기준으로 다시 등록한다. 수동 등록 후보는 건드리지 않는다(사람이 넣은 것을
+     * 자동 판정으로 뺄 권한이 없다).
      *
      * <p>후보 비활성화는 매도를 유발하지 않는다: 매도 판정은 newsFadeDetector 만 보고
      * 후보 활성여부는 매수 스캔(AutoTradeScheduler 의 candidateMapper.findActive)에서만 쓴다.
      */
-    private void requalifyLegacyCandidates() {
+    private void requalifyCandidates() {
         for (AutoTradeCandidate c : candidateMapper.findActive()) {
-            String note = c.getValuationNote();
-            if (note == null || !note.startsWith("자동발견(") || note.contains("촉매점수")) {
-                continue;   // 수동 등록이거나 이미 새 기준으로 등록된 후보
+            String reason = disqualifyReason(c.getValuationNote());
+            if (reason == null) {
+                continue;
             }
             candidateMapper.deactivate(c.getSymbol());
-            log.info("후보 재심사 해제(구 게이트 등록분): {} - {}", c.getSymbol(), note);
+            log.info("후보 재심사 해제({}): {} - {}", reason, c.getSymbol(), c.getValuationNote());
         }
+    }
+
+    /** 해제 사유. 유지해야 하면 null. 설계: 869 README §2.2.1 판정 순서. */
+    static String disqualifyReason(String note) {
+        if (note == null || !note.startsWith(AUTO_NOTE_PREFIX)) {
+            return null;   // 수동 등록
+        }
+        if (!note.contains(NEW_GATE_MARKER)) {
+            return "구 게이트 등록분";
+        }
+        String title = titleOf(note);
+        if (TitleGuard.lossSide(title)) {
+            return "제목판정 LOSS";
+        }
+        if (TitleGuard.buyerSide(title)) {
+            return "제목판정 BUYER";
+        }
+        return null;
+    }
+
+    /** 노트 {@code 자동발견(…): <제목>} 에서 제목 부분. 형식이 다르면 노트 전체. */
+    static String titleOf(String note) {
+        int i = note.indexOf("): ");
+        return i < 0 ? note : note.substring(i + 3);
     }
 
     private void addNewCandidates() {
