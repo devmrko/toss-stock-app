@@ -52,8 +52,11 @@ public final class CatalystQualifier {
         // 0. 결정론적 제목 가드(#869) — LLM 판정보다 먼저. 라이브에서 LLM 이 인수 주체를
         //    SELLER 로, 2조 적자를 riskFlag=NONE 으로 응답한 사례가 실제로 후보 등록까지 갔다.
         //    정규식으로 결정되는 것을 LLM 에 묻지 않는다. 차단만 추가하므로 안전 방향이 단조롭다.
-        if (TitleGuard.lossSide(title)) {
-            return new Verdict(false, "리스크 이벤트(LOSS·제목판정)", score);
+        //    #877: 적자 외에 유상증자·감자·횡령·상폐까지 확장 — 유상증자가 적자보다 6배 많은데
+        //    가드가 없었고 LLM riskFlag 는 98% 생략된다.
+        String titleRisk = TitleGuard.riskFlagOf(title);
+        if (titleRisk != null) {
+            return new Verdict(false, "리스크 이벤트(" + titleRisk + "·제목판정)", score);
         }
         if (TitleGuard.buyerSide(title)) {
             return new Verdict(false, "수혜 주체 아님(BUYER·제목판정)", score);

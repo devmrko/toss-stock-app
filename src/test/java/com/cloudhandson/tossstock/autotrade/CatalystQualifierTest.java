@@ -48,6 +48,29 @@ class CatalystQualifierTest {
     }
 
     @Test
+    void 가드_유상증자_제목은_riskFlag_생략이어도_차단된다() {
+        // #877 — 라이브 전수에서 유상증자는 종목코드 타겟 기사 99건으로 적자(16건)보다
+        // 6배 많은데 가드가 없었고 LLM riskFlag 는 98% 생략된다. "140억원 제3자배정
+        // 유상증자" 는 confirmed·materialAmount 를 만족해 희석 사건이 매수 근거로 통과했다.
+        CatalystQualifier.Verdict v = CatalystQualifier.qualify(
+                good(), "에피소드컴퍼니, 140억원 제3자배정 유상증자");
+        assertThat(v.pass()).isFalse();
+        assertThat(v.reason()).isEqualTo("리스크 이벤트(DILUTION·제목판정)");
+    }
+
+    @Test
+    void 가드_무상증자는_차단되지_않는다() {
+        // 무상증자는 호재다.
+        assertThat(CatalystQualifier.qualify(good(), "큐리오시스, 주당 1.0주 무상증자 결정").pass()).isTrue();
+    }
+
+    @Test
+    void 가드_상폐_관리종목_제목은_매수_차단된다() {
+        assertThat(CatalystQualifier.qualify(good(), "'시총 미달' 프롬바이오, 관리종목 지정에 '급락'").reason())
+                .isEqualTo("리스크 이벤트(DELISTING·제목판정)");
+    }
+
+    @Test
     void 가드_정상_수주_제목은_기존대로_통과한다() {
         // 인수조건 6 — 가드는 차단만 추가한다. 통과하던 기사를 막지 않는다.
         assertThat(CatalystQualifier.qualify(

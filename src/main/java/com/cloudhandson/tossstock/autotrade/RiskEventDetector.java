@@ -78,6 +78,8 @@ public class RiskEventDetector {
         if (flag != null && !"NONE".equalsIgnoreCase(flag)) {
             return flag;
         }
-        return TitleGuard.lossSide(title) ? "LOSS" : null;
+        // #877: 공시형 리스크만 쓴다 — 제목 기반 LOSS 는 정밀도가 낮아 제외한다.
+        // 매수 차단의 오탐은 기회비용이지만 매도 오탐은 실현손실이다(announcedRiskOf 주석 참조).
+        return TitleGuard.announcedRiskOf(title);
     }
 }

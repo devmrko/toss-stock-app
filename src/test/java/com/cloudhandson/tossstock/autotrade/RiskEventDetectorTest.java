@@ -51,17 +51,26 @@ class RiskEventDetectorTest {
     }
 
     @Test
-    void judge_riskFlag가_NONE이어도_적자_제목이면_LOSS() {
+    void judge_riskFlag가_NONE이어도_공시형_제목이면_그_종류를_반환한다() {
         // 인수조건 2 — LLM 이 놓쳐도 제목 가드가 잡는 이중 구조.
-        // 실제로 이 기사가 riskFlag=NONE 으로 왔다(#869 §1).
-        assertThat(RiskEventDetector.judge("갤Z 폴드8 흥행에도…DX부문, 2조 적자", CLEAN_FACTS))
-                .isEqualTo("LOSS");
+        //
+        // #877 에서 이 테스트의 기대가 바뀌었다. 원래는 "2조 적자" 제목으로 LOSS 를
+        // 반환해 매도를 유발하는 것이 기대였다(#872). 그런데 라이브 7,655건 전수 검증에서
+        // 제목 기반 LOSS 15건 중 4~5건이 오탐이었다 — "'3년간 3.5조 적자' 한화오션,
+        // 올 2조 이익 눈앞"(흑자 전환 기사), "SK하닉 … '적자 때 임금 조정' 발칵"(임금협상),
+        // "LG화학 … 진에어는 적자 지속"(타 종목 교차오염).
+        //
+        // 매수 차단의 오탐은 기회비용이지만 매도 오탐은 멀쩡한 포지션의 실현손실이다.
+        // 그래서 매도 트리거는 정밀도가 검증된 공시형(DILUTION)만 쓴다.
+        assertThat(RiskEventDetector.judge("A사, 140억원 제3자배정 유상증자", CLEAN_FACTS))
+                .isEqualTo("DILUTION");
     }
 
     @Test
     void judge_facts가_없어도_제목_가드는_동작한다() {
-        assertThat(RiskEventDetector.judge("OO사, 3분기 영업손실 확대", null)).isEqualTo("LOSS");
-        assertThat(RiskEventDetector.judge("OO사, 3분기 영업손실 확대", "깨진 JSON")).isEqualTo("LOSS");
+        assertThat(RiskEventDetector.judge("OO사, 50억원 제3자배정 유상증자", null)).isEqualTo("DILUTION");
+        assertThat(RiskEventDetector.judge("OO사, 50억원 제3자배정 유상증자", "깨진 JSON"))
+                .isEqualTo("DILUTION");
     }
 
     @Test
@@ -131,5 +140,39 @@ class RiskEventDetectorTest {
         ArgumentCaptor<LocalDateTime> from = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(newsMapper).forSymbolBetween(eq("005930"), from.capture(), any());
         assertThat(from.getValue()).isEqualTo(entry);
+    }
+
+    // ---- #877 매도 트리거는 공시형(DILUTION)만 ----
+
+    @Test
+    void judge_유상증자_제목은_riskFlag_생략이어도_DILUTION() {
+        assertThat(RiskEventDetector.judge("에피소드컴퍼니, 140억원 제3자배정 유상증자", CLEAN_FACTS))
+                .isEqualTo("DILUTION");
+        assertThat(RiskEventDetector.judge("알테오젠, 500억원 유상증자…제3자배정", null))
+                .isEqualTo("DILUTION");
+    }
+
+    @Test
+    void judge_제목_기반_적자는_매도를_유발하지_않는다() {
+        // #877 — 라이브 전수에서 LOSS 15건 중 4~5건이 오탐이었다("'3년간 3.5조 적자'
+        // 한화오션, 올 2조 이익 눈앞" 등). 매수 차단의 오탐은 기회비용이지만
+        // 매도 오탐은 멀쩡한 포지션의 실현손실이다.
+        assertThat(RiskEventDetector.judge("갤Z 폴드8 흥행에도…DX부문, 2조 적자", CLEAN_FACTS)).isNull();
+        assertThat(RiskEventDetector.judge("'3년간 3.5조 적자' 한화오션, 올 2조 이익 눈앞", null)).isNull();
+    }
+
+    @Test
+    void judge_제목_기반_상폐는_매도를_유발하지_않는다() {
+        // DELISTING 은 오탐이 10건 중 5건이었다 — 제목 정규식은 "누구의 리스크인지"를
+        // 구분하지 못한다("홈플러스 회생절차 폐지에…'반사이익' 롯데쇼핑·이마트 강세").
+        assertThat(RiskEventDetector.judge("홈플러스 회생절차 폐지에…'반사이익' 롯데쇼핑·이마트 강세", null)).isNull();
+        assertThat(RiskEventDetector.judge("파산 위기 '동전주' 하이닉스, 25년만에 증시 새 황제 등극", null)).isNull();
+    }
+
+    @Test
+    void judge_LLM이_riskFlag를_채웠으면_종류_무관하게_매도한다() {
+        // 제목 가드와 달리 LLM 이 명시적으로 플래그를 준 경우는 그대로 신뢰한다(#872).
+        String governance = "{\"riskFlag\":\"GOVERNANCE\"}";
+        assertThat(RiskEventDetector.judge("A사 전 대표 기소", governance)).isEqualTo("GOVERNANCE");
     }
 }
