@@ -96,6 +96,90 @@ class AutoTradeSchedulerTest {
         return s;
     }
 
+    /** 진입 200,000 / 피크 235,000 보유 포지션. 손절선은 하드 180,000 · 트레일 211,500. */
+    private AutoTradePosition holding() {
+        AutoTradePosition p = new AutoTradePosition();
+        p.setId(1L);
+        p.setSymbol(SYMBOL);
+        p.setMarket("KR");
+        p.setEntryPrice(BigDecimal.valueOf(200_000));
+        p.setEntryQty(BigDecimal.valueOf(5));
+        p.setPeakPrice(BigDecimal.valueOf(235_000));
+        p.setDryRun(true);
+        return p;
+    }
+
+    private void holdingAt(String currentPrice) {
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of(holding()));
+        when(positionMapper.countHolding()).thenReturn(1);
+        when(priceCache.get(List.of(SYMBOL)))
+                .thenReturn(List.of(new TossPrice(SYMBOL, currentPrice, "KRW", null)));
+    }
+
+    // ---- #871 뉴스 만료는 매도 사유가 아니다 ----
+
+    @Test
+    void 뉴스가_식어도_손절선_위면_팔지_않는다() {
+        // 인수조건 1 — 기존엔 NEWS_FADED 로 팔았다. 투자원칙 §4 의 매도 규칙은
+        // 진입가 -10%, 고점 -10% 추적, 지수 열위 교체 셋뿐이고 "뉴스 만료"는 없다.
+        holdingAt("225000");   // 하드 180,000 · 트레일 211,500 모두 위
+        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
+
+        scheduler.tick();
+
+        verify(orderExecutor, org.mockito.Mockito.never()).sell(any(), any(), any(), any());
+    }
+
+    @Test
+    void 매도_판정에서_뉴스소멸을_조회하지_않는다() {
+        // 인수조건 5 — 매도 경로가 뉴스에 의존하지 않음을 고정한다.
+        holdingAt("225000");
+
+        scheduler.tick();
+
+        verify(newsFadeDetector, org.mockito.Mockito.never()).hasNewsFaded(SYMBOL);
+    }
+
+    @Test
+    void 뉴스가_식었어도_하드손절_조건이면_HARD_STOP으로_팔린다() {
+        // 인수조건 2 — 하방은 원칙이 정한 손절이 지킨다. 사유가 뉴스소멸이 아니어야 한다.
+        // 피크=진입가(상승 이력 없음)여야 하드손절선(180,000)이 바인딩이 된다 —
+        // 피크가 더 높으면 추적손절선이 위로 올라와 TRAIL_STOP 이 먼저 걸린다.
+        AutoTradePosition p = holding();
+        p.setPeakPrice(BigDecimal.valueOf(200_000));
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of(p));
+        when(positionMapper.countHolding()).thenReturn(1);
+        when(priceCache.get(List.of(SYMBOL)))
+                .thenReturn(List.of(new TossPrice(SYMBOL, "179000", "KRW", null)));
+        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
+
+        scheduler.tick();
+
+        verify(orderExecutor).sell(any(), eq(ExitReason.HARD_STOP), any(), any());
+    }
+
+    @Test
+    void 뉴스가_식었어도_추적손절_조건이면_TRAIL_STOP으로_팔린다() {
+        holdingAt("210500");   // 트레일손절선 211,500 이탈
+        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
+
+        scheduler.tick();
+
+        verify(orderExecutor).sell(any(), eq(ExitReason.TRAIL_STOP), any(), any());
+    }
+
+    @Test
+    void NEWS_FADED_enum은_과거기록용으로_남아있다() {
+        // 인수조건 3 — auto_trade_position.exit_reason 에 'NEWS_FADED' 문자열이 이미
+        // 저장돼 있어(2026-10-08 4건 포함) enum 에서 빼면 과거 매매 조회가 깨진다.
+        assertThat(ExitReason.valueOf("NEWS_FADED")).isEqualTo(ExitReason.NEWS_FADED);
+        assertThat(SellRationale.describe(ExitReason.NEWS_FADED, BigDecimal.valueOf(200_000),
+                BigDecimal.valueOf(235_000), BigDecimal.valueOf(225_000),
+                BigDecimal.valueOf(180_000), BigDecimal.valueOf(211_500))).contains("뉴스소멸");
+    }
+
     @Test
     void sell_rationale_carries_binding_stop_peak_and_pnl() {
         AutoTradePosition p = new AutoTradePosition();

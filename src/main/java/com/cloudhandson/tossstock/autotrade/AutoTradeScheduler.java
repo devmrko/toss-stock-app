@@ -117,14 +117,18 @@ public class AutoTradeScheduler {
 
         ExitReason exit = TrailingStopCalculator.decide(current, peak, p.getEntryPrice(),
                 props.hardStopPct(), props.trailStopPct());
-        // 2026-10-07 실사고 수정: #828로 "뉴스 식었지만 저평가+상대강세"라서 산 포지션을 바로 다음
-        // 틱에 "뉴스 식음"으로 또 팔아버리면, 판 직후 같은 조건으로 재매수돼 무한 매수-매도 반복으로
-        // 이어짐(259630 실사례, 44회 왕복/실현손실 24,950원) — 매수 게이트(#828)에만 넣은 예외를
-        // 매도 게이트에도 대칭으로 반영. 지금도 저평가+상대강세면 뉴스 소멸을 매도 이유로 안 본다.
-        if (exit == ExitReason.NONE && newsFadeDetector.hasNewsFaded(p.getSymbol())
-                && !candidateDiscovery.isCheapAndRelativelyStrong(p.getSymbol(), p.getMarket())) {
-            exit = ExitReason.NEWS_FADED;
-        }
+        // #871: 여기 있던 NEWS_FADED 매도 분기를 제거했다. hasNewsFaded 는 "미만료 S4+ 기사가
+        // 없음"이고 TTL 이 S4=8h 라, S4 기사로 산 포지션이 가격과 무관하게 8시간 뒤 강제 매도됐다.
+        // 투자원칙 §4 의 매도 규칙은 진입가 -10%, 고점 -10% 추적, 지수 열위 교체 셋뿐이며
+        // "뉴스 만료"는 없다. 기사가 만료된 것은 그 기사의 수명이 끝난 것이고 투자 논거가
+        // 무효가 된 것이 아니다 — 둘을 같게 취급한 게 설계 오류였다.
+        //
+        // 실측 피해: 2026-10-08 청산 5건 중 4건이 NEWS_FADED. 엠플러스(259630) 45회 왕복에서
+        // 총손익 -93,140원 중 수수료·세금이 61,323원 — 만료 매도 → 신규 기사 → 재매수 루프.
+        //
+        // 기사 만료는 "더 사지 않을 이유"는 되지만 "팔 이유"는 되지 않는다(비대칭 의도).
+        // 안 사면 기회비용이고, 팔면 손실과 수수료가 확정된다. 그래서 hasNewsFaded 는
+        // 후보 풀 경로(매수 쪽)에만 남겨 뒀다. 하방은 HARD_STOP/TRAIL_STOP/CIRCUIT_BREAKER 가 지킨다.
         if (exit != ExitReason.NONE) {
             // 결정근거 스냅샷(#832) — 하드/트레일 손절선은 판정에 쓴 바로 그 공식으로 재계산(부수효과 없음).
             String rationale = SellRationale.describe(exit, p.getEntryPrice(), peak, current,
