@@ -18,6 +18,8 @@ public class StockNews {
     private String kind;
     private String model;
     private LocalDateTime expiresAt;
+    /** #865 촉매 자격 판정용 사실 JSON. null 이면 판정 불가 → 매수 금지(fail-closed). */
+    private String facts;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -47,4 +49,6 @@ public class StockNews {
     public void setModel(String model) { this.model = model; }
     public LocalDateTime getExpiresAt() { return expiresAt; }
     public void setExpiresAt(LocalDateTime expiresAt) { this.expiresAt = expiresAt; }
+    public String getFacts() { return facts; }
+    public void setFacts(String facts) { this.facts = facts; }
 }

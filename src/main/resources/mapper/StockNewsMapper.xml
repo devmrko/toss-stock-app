@@ -17,7 +17,8 @@
     <update id="updateAnalyzed">
         UPDATE stock_news SET
             status = 'ANALYZED', targets = #{targets}, sentiment = #{sentiment},
-            rationale = #{rationale}, kind = #{kind}, model = #{model}, expires_at = #{expiresAt}
+            rationale = #{rationale}, kind = #{kind}, model = #{model}, expires_at = #{expiresAt},
+            facts = #{facts}
         WHERE id = #{id}
     </update>
 
@@ -36,6 +37,7 @@
         <result property="kind" column="KIND"/>
         <result property="model" column="MODEL"/>
         <result property="expiresAt" column="EXPIRES_AT"/>
+        <result property="facts" column="FACTS"/>
     </resultMap>
 
     <select id="findReceived" resultMap="newsMap">
@@ -73,7 +75,7 @@
 
     <select id="findRecentEvents" resultMap="newsMap">
         SELECT id, ext_id, title, url, source, published_at, fetched_at, status,
-               targets, sentiment, rationale, kind, model, expires_at
+               targets, sentiment, rationale, kind, model, expires_at, facts
         FROM stock_news
         WHERE kind = 'EVENT' AND fetched_at &gt;= #{since}
           AND (sentiment LIKE '%S4%' OR sentiment LIKE '%S5%')

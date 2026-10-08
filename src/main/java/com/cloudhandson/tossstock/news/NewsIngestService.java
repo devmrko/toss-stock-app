@@ -80,7 +80,8 @@ public class NewsIngestService {
                     continue;   // RECEIVED 유지(다음 주기 재시도)
                 }
                 mapper.updateAnalyzed(row.getId(), c.targetsCsv(), c.sentimentCsv(),
-                        rationale(c), c.kind(), props.llmModel(), ttl(c.maxStrength()));
+                        rationale(c), c.kind(), props.llmModel(), ttl(c.maxStrength()),
+                        c.factsJson());
                 analyzed++;
             }
             log.info("뉴스 수집: fetched={} inserted={} analyzed={}", items.size(), inserted, analyzed);

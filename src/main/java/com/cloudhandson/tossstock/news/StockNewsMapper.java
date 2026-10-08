@@ -16,7 +16,8 @@ public interface StockNewsMapper {
     int updateAnalyzed(@Param("id") Long id, @Param("targets") String targets,
                        @Param("sentiment") String sentiment, @Param("rationale") String rationale,
                        @Param("kind") String kind, @Param("model") String model,
-                       @Param("expiresAt") LocalDateTime expiresAt);
+                       @Param("expiresAt") LocalDateTime expiresAt,
+                       @Param("facts") String facts);
 
     List<StockNews> findReceived(@Param("limit") int limit);
 

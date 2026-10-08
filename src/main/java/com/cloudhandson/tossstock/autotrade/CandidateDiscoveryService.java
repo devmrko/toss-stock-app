@@ -4,6 +4,7 @@ import com.cloudhandson.tossstock.market.DailyCollector;
 import com.cloudhandson.tossstock.market.DailyOhlcv;
 import com.cloudhandson.tossstock.market.DailyOhlcvMapper;
 import com.cloudhandson.tossstock.market.UniverseMapper;
+import com.cloudhandson.tossstock.news.NewsFacts;
 import com.cloudhandson.tossstock.news.NewsSignals;
 import com.cloudhandson.tossstock.news.StockNews;
 import com.cloudhandson.tossstock.news.StockNewsMapper;
@@ -84,6 +85,13 @@ public class CandidateDiscoveryService {
                 if (level == null || Integer.parseInt(level.substring(1)) < 4) {
                     continue;
                 }
+                // #865 1단 게이트: 등급(S4↑)만으로는 통과율 37%로 사실상 무필터였다.
+                // 원칙 §3 기준의 촉매 자격을 사실(facts)로 판정한다 — facts 없으면 매수 금지.
+                CatalystQualifier.Verdict v = CatalystQualifier.qualify(NewsFacts.parse(n.getFacts()));
+                if (!v.pass()) {
+                    log.debug("촉매 자격 미달({}): {} - {}", v.reason(), symbol, n.getTitle());
+                    continue;
+                }
                 String market = marketOf(symbol);
                 if (market == null) {
                     continue; // 섹터명/MARKET 등 종목 아닌 타겟
@@ -94,9 +102,11 @@ public class CandidateDiscoveryService {
                 AutoTradeCandidate c = new AutoTradeCandidate();
                 c.setSymbol(symbol);
                 c.setMarket(market);
-                c.setValuationNote("자동발견(" + LocalDateTime.now() + "): " + n.getTitle());
+                // 촉매 점수(0~4, 원칙 §3 '불변×수출' 근접도)를 노트에 남겨 사후 분석 가능하게.
+                c.setValuationNote("자동발견(" + LocalDateTime.now() + ", 촉매점수 " + v.score()
+                        + "/4): " + n.getTitle());
                 candidateMapper.insert(c);
-                log.info("후보 자동등록: {} ({}) - {}", symbol, market, n.getTitle());
+                log.info("후보 자동등록: {} ({}) 촉매점수 {}/4 - {}", symbol, market, v.score(), n.getTitle());
                 if ("US".equals(market)) {
                     dailyCollector.backfillSymbol(symbol, null); // 비동기 — KR은 정기 전종목 스캔이 이미 커버
                 }

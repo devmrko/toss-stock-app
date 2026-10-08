@@ -56,11 +56,22 @@ class CandidateDiscoveryServiceTest {
         when(candidateMapper.findActive()).thenReturn(List.of());
     }
 
+    /** #865 촉매 자격을 충족하는 facts — 등급 외 조건은 통과시키고 등급 로직만 보는 용도. */
+    private static final String QUALIFIED_FACTS = """
+            {"confirmed":true,"isTransaction":true,"materialAmount":true,
+             "priceAlreadyMoved":false,"beneficiary":"SELLER","riskFlag":"NONE"}""";
+
     private static StockNews news(String targets, String sentiment, String title) {
+        StockNews n = news(targets, sentiment, title, QUALIFIED_FACTS);
+        return n;
+    }
+
+    private static StockNews news(String targets, String sentiment, String title, String facts) {
         StockNews n = new StockNews();
         n.setTargets(targets);
         n.setSentiment(sentiment);
         n.setTitle(title);
+        n.setFacts(facts);
         return n;
     }
 
@@ -131,6 +142,82 @@ class CandidateDiscoveryServiceTest {
         service.refresh();
 
         verify(candidateMapper, never()).insert(any());
+    }
+
+    // ---- #865 촉매 자격 게이트 ----
+
+    @Test
+    void facts_없는_기사는_s5라도_등록되지_않는다() {
+        // fail-closed — LLM 추출 실패·구버전 행은 매수 근거가 없다(인수조건 5).
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("009150", "009150:S5", "삼성전기 뉴스", null)));
+        when(candidateMapper.existsActive("009150")).thenReturn(false);
+
+        service.refresh();
+
+        verify(candidateMapper, never()).insert(any());
+    }
+
+    @Test
+    void 규모_미제시_기사는_등록되지_않는다() {
+        // "금액 미공개 MOU" 류 — 원칙 §3-1 '구체 촉매'가 아니다.
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("009150", "009150:S4", "삼성전기, 업무협약 체결",
+                        """
+                        {"confirmed":true,"isTransaction":true,"materialAmount":false,
+                         "priceAlreadyMoved":false,"beneficiary":"SELLER","riskFlag":"NONE"}""")));
+        when(candidateMapper.existsActive("009150")).thenReturn(false);
+
+        service.refresh();
+
+        verify(candidateMapper, never()).insert(any());
+    }
+
+    @Test
+    void 리스크_이벤트는_호재와_함께여도_등록되지_않는다() {
+        // 인수조건 2 — 유상증자가 섞이면 긍정 사실로 상쇄하지 않는다(원칙 §3-3).
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("009150", "009150:S5", "삼성전기, 대규모 수주와 함께 유상증자 결정",
+                        """
+                        {"confirmed":true,"isTransaction":true,"materialAmount":true,
+                         "recurring":true,"secularDemand":true,"exportGlobal":true,
+                         "priceAlreadyMoved":false,"beneficiary":"SELLER","riskFlag":"DILUTION"}""")));
+        when(candidateMapper.existsActive("009150")).thenReturn(false);
+
+        service.refresh();
+
+        verify(candidateMapper, never()).insert(any());
+    }
+
+    @Test
+    void 선반영_사후보도_기사는_등록되지_않는다() {
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("009150", "009150:S5", "[특징주] 삼성전기 급등",
+                        """
+                        {"confirmed":true,"isTransaction":false,"materialAmount":true,
+                         "priceAlreadyMoved":true,"beneficiary":"NEITHER","riskFlag":"NONE"}""")));
+        when(candidateMapper.existsActive("009150")).thenReturn(false);
+
+        service.refresh();
+
+        verify(candidateMapper, never()).insert(any());
+    }
+
+    @Test
+    void 촉매점수가_노트에_기록된다() {
+        // 인수조건 3 — 판정 근거의 설명 가능성.
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
+                news("009150", "009150:S5", "삼성전기, 3900억 장기 수출 공급계약",
+                        """
+                        {"confirmed":true,"isTransaction":true,"materialAmount":true,
+                         "recurring":true,"secularDemand":true,"exportGlobal":true,
+                         "shareholderReturn":true,
+                         "priceAlreadyMoved":false,"beneficiary":"SELLER","riskFlag":"NONE"}""")));
+        when(candidateMapper.existsActive("009150")).thenReturn(false);
+
+        service.refresh();
+
+        verify(candidateMapper).insert(argThat(c -> c.getValuationNote().contains("촉매점수 4/4")));
     }
 
     @Test

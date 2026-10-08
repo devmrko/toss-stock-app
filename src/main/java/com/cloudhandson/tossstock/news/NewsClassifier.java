@@ -36,7 +36,7 @@ public class NewsClassifier {
     private static final String SYSTEM = """
             You classify a Korean or US stock-market news headline's likely market impact.
             Output STRICT JSON only, no prose, no markdown fences.
-            Schema: {"targets":[{"type":"SYMBOL|SECTOR|MARKET","name":"<상장사명/티커 or 섹터 or MARKET>","level":"S1|S2|S3|S4|S5"}],"kind":"EVENT|SPECULATION","analysis":"<한국어 1~2문장>"}
+            Schema: {"targets":[{"type":"SYMBOL|SECTOR|MARKET","name":"<상장사명/티커 or 섹터 or MARKET>","level":"S1|S2|S3|S4|S5"}],"kind":"EVENT|SPECULATION","analysis":"<한국어 1~2문장>","facts":{...}}
             Levels — 방향만이 아니라 "실적(매출·이익·현금흐름)에 미치는 영향의 크기"로 정한다.
               S5 강한 호재: 실적에 직접적이고 큰 영향이며 금액·규모가 제시됨 — 대형 수주·공급계약,
                 자산매각, 인수합병, 신약 승인, 대규모 자사주 소각, 컨센서스를 명확히 상회한 어닝 서프라이즈.
@@ -63,6 +63,32 @@ public class NewsClassifier {
               (원가 절감폭, 독점 공급권 등)이 기사에 적시된 경우에만 S4.
             주식과 무관하면 targets 에 MARKET S3 하나만.
             analysis 는 반드시 한국어로 무엇이 왜 호재/악재인지(영문 기사여도 한국어로).
+
+            facts — 해석·추측 금지. 기사 제목에 명시된 것만. 판단이 안 서면 그 필드를 생략한다
+              (생략 = "모름"이며, false 와 다르게 처리된다. 억지로 false 를 넣지 말 것).
+            {"confirmed":bool,        // 이미 확정된 사실(계약 체결·실적 발표·규제 승인).
+                                      //   전망·목표가·예상·추진·검토·기대·발표 예정은 false
+             "isTransaction":bool,    // 거래 기사인가(공급·수주·납품·인수·매각). 실적발표·승인은 false
+             "materialAmount":bool,   // 매출·이익에 **직결되는** 금액/수량이 숫자로 제시됨.
+                                      //   true 예: 수주 3900억원, 영업이익 7560억원, 공급 24만톤
+                                      //   false 예: 분양 499가구, 설계사 4만명, 회원 100만명,
+                                      //     점포 50개, 참가자 2000명, 면적 84제곱미터, 금리 5.8%%
+                                      //     — 숫자가 있어도 그 분기 매출·이익 금액이 아니면 false.
+                                      //   단순 개점·오픈·착수·참가·수상·MOU 는 금액이 적혀도 false.
+                                      //   "대규모"·"사상 최대" 처럼 숫자가 없으면 false
+             "recurring":bool,        // 반복·지속 매출(장기공급계약, 구조적 수요). 일회성이면 false
+             "secularDemand":bool,    // 고령화·AI·전력·방산 등 장기 불변 수요에 속함
+             "exportGlobal":bool,     // 수출·해외매출 확대와 직접 연결
+             "shareholderReturn":bool,// 배당·자사주 매입·소각
+             "priceAlreadyMoved":bool,// 이미 일어난 주가 등락의 사후 보도
+                                      //   ("특징주", "급등", "상한가", "신고가", "목표가 상향", "N%% 뛴")
+             "beneficiary":"SELLER|BUYER|NEITHER", // 이 거래로 매출이 생기는 쪽이 대상 종목인가
+             "riskFlag":"NONE|DILUTION|GOVERNANCE|DELISTING|BLOCKDEAL|LITIGATION|LOSS",
+                                      //   유상증자·CB·BW·전환사채→DILUTION, 횡령·배임·분식→GOVERNANCE,
+                                      //   상장폐지·거래정지·관리종목→DELISTING, 블록딜·대량매각→BLOCKDEAL,
+                                      //   소송·제재·리콜→LITIGATION, 적자·어닝쇼크·실적부진→LOSS,
+                                      //   해당 없으면 NONE
+             "why":"<한국어 한 문장>"}
             """.formatted(SECTORS);
 
     private final NewsProperties props;
@@ -99,7 +125,7 @@ public class NewsClassifier {
         try {
             String body = om.writeValueAsString(Map.of(
                     "model", props.llmModel(),
-                    "max_tokens", 400,
+                    "max_tokens", 800,   // #865 facts 11필드 추가분 포함
                     "messages", List.of(
                             Map.of("role", "system", "content", SYSTEM),
                             Map.of("role", "user", "content", "기사: " + title + "\nReturn the JSON now."))));
@@ -133,7 +159,8 @@ public class NewsClassifier {
             }
             return new Parsed(targets,
                     n.path("kind").asText("EVENT").toUpperCase(),
-                    n.path("analysis").asText(""));
+                    n.path("analysis").asText(""),
+                    NewsFacts.from(n.get("facts")));   // 없으면 null → 자격판정 fail-closed
         } catch (Exception e) {
             log.warn("LLM JSON 파싱 실패: {}", e.toString());
             return null;
@@ -162,7 +189,8 @@ public class NewsClassifier {
         String sentimentCsv = keyToLevel.entrySet().stream()
                 .map(e -> e.getKey() + ":" + e.getValue()).reduce((a, b) -> a + "," + b).orElse("");
         int maxStrength = keyToLevel.values().stream().mapToInt(NewsClassifier::strength).max().orElse(0);
-        return new ClassifyResult(targetsCsv, sentimentCsv, p.kind(), p.analysis(), maxStrength);
+        return new ClassifyResult(targetsCsv, sentimentCsv, p.kind(), p.analysis(), maxStrength,
+                p.facts() == null ? null : p.facts().toJson());
     }
 
     /** 한국 상장사명 → 6자리 코드 우선 시도, 없으면 미국 티커로 간주해 us_universe 실존 확인. */
@@ -182,11 +210,12 @@ public class NewsClassifier {
     record Target(String type, String name, String level) {
     }
 
-    record Parsed(List<Target> targets, String kind, String analysis) {
+    record Parsed(List<Target> targets, String kind, String analysis, NewsFacts facts) {
     }
 
+    /** factsJson: 저장용 JSON(없으면 null) — 매수 자격 판정은 이 값으로 한다(#865). */
     public record ClassifyResult(String targetsCsv, String sentimentCsv, String kind,
-                                 String analysis, int maxStrength) {
+                                 String analysis, int maxStrength, String factsJson) {
     }
 
     private static String stripFences(String s) {

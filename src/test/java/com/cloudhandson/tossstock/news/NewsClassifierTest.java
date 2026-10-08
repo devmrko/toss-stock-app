@@ -36,7 +36,7 @@ class NewsClassifierTest {
         Parsed p = new Parsed(List.of(
                 new NewsClassifier.Target("SYMBOL", "삼성전자", "S5"),
                 new NewsClassifier.Target("SECTOR", "반도체", "S5"),
-                new NewsClassifier.Target("MARKET", "MARKET", "S3")), "EVENT", "분석");
+                new NewsClassifier.Target("MARKET", "MARKET", "S3")), "EVENT", "분석", null);
 
         ClassifyResult r = c.resolve(p);
 
@@ -50,7 +50,7 @@ class NewsClassifierTest {
         when(um.findCodeByName("없는회사")).thenReturn(null);
         Parsed p = new Parsed(List.of(
                 new NewsClassifier.Target("SYMBOL", "없는회사", "S5"),
-                new NewsClassifier.Target("SECTOR", "헛소리섹터", "S4")), "EVENT", "x");
+                new NewsClassifier.Target("SECTOR", "헛소리섹터", "S4")), "EVENT", "x", null);
 
         ClassifyResult r = c.resolve(p);
 
