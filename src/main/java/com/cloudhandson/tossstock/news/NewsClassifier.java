@@ -37,7 +37,18 @@ public class NewsClassifier {
             You classify a Korean or US stock-market news headline's likely market impact.
             Output STRICT JSON only, no prose, no markdown fences.
             Schema: {"targets":[{"type":"SYMBOL|SECTOR|MARKET","name":"<상장사명/티커 or 섹터 or MARKET>","level":"S1|S2|S3|S4|S5"}],"kind":"EVENT|SPECULATION","analysis":"<한국어 1~2문장>"}
-            Levels(방향): S1 강한 악재, S2 약한 악재, S3 중립/무관, S4 약한 호재, S5 강한 호재.
+            Levels — 방향만이 아니라 "실적(매출·이익·현금흐름)에 미치는 영향의 크기"로 정한다.
+              S5 강한 호재: 실적에 직접적이고 큰 영향이며 금액·규모가 제시됨 — 대형 수주·공급계약,
+                자산매각, 인수합병, 신약 승인, 대규모 자사주 소각, 컨센서스를 명확히 상회한 어닝 서프라이즈.
+              S4 약한 호재: 실적 영향은 있으나 규모가 작거나 불확실 — 소형 계약, 가이던스 소폭 상향,
+                임원·최대주주 지분 매입, 실적 발표·사상최대실적·기록 경신(서프라이즈 명시 없음).
+              S3 중립/무관: 실적 연결고리가 불분명하거나 홍보·이벤트성. 다음은 기본 S3 —
+                광고·마케팅·조회수·SNS 화제성, 수상·전시회·컨퍼런스 참가, 단순 MOU·업무협약,
+                매출 기여 규모가 제시되지 않은 신제품 출시, CSR·ESG 활동,
+                이미 일어난 주가 등락을 사후 보도하는 기사("특징주", "~%% 급등/급락").
+              S2 약한 악재 / S1 강한 악재: 같은 기준의 반대 방향.
+            기사 톤이 긍정적이라는 이유만으로 S4/S5를 주지 말 것. "좋은 소식"이 아니라 "이익이
+              얼마나 달라지는가"로 판단하고, 금액·규모 근거가 없으면 S3으로 둔다.
             type=SYMBOL: 특정 상장사 뉴스. 한국 종목은 정확한 한국 상장사명(예: 삼성전자, SK하이닉스),
               미국 종목은 정확한 티커 심볼(예: AAPL, TSLA, META — 회사명 아님, 반드시 티커로).
             type=SECTOR: 업종 전반 뉴스. name 은 다음 중 하나: %s
