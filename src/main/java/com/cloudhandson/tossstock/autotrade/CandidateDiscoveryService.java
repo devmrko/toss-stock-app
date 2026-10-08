@@ -69,8 +69,34 @@ public class CandidateDiscoveryService {
 
     @Scheduled(cron = "${auto-trade.discovery-cron:0 */15 * * * *}", zone = "Asia/Seoul")
     public void refresh() {
+        requalifyLegacyCandidates();
         addNewCandidates();
         removeFadedCandidates();
+    }
+
+    /**
+     * #869 구 게이트(통과율 37%)로 등록된 후보를 비활성화한다. #865 의 자격 게이트는 신규
+     * 등록만 거르므로, 그 전에 들어온 후보(노브랜드 버거 매장 확대, 발행어음 특판,
+     * 'LG엔솔 리튬 공급받기로' 등)가 그대로 매수 대상으로 남아 있었다.
+     *
+     * <p>신·구 판별은 노트의 "촉매점수" 문자열로 한다 — #865 이후 코드만 기록하므로 현재
+     * 유일한 구분자다(노트 포맷을 바꾸면 이 로직도 함께 고칠 것).
+     *
+     * <p>자가치유형이다 — 자격 있는 뉴스가 여전히 있으면 바로 아래 addNewCandidates 가
+     * 새 기준으로 다시 등록한다. 수동 등록 후보는 건드리지 않는다.
+     *
+     * <p>후보 비활성화는 매도를 유발하지 않는다: 매도 판정은 newsFadeDetector 만 보고
+     * 후보 활성여부는 매수 스캔(AutoTradeScheduler 의 candidateMapper.findActive)에서만 쓴다.
+     */
+    private void requalifyLegacyCandidates() {
+        for (AutoTradeCandidate c : candidateMapper.findActive()) {
+            String note = c.getValuationNote();
+            if (note == null || !note.startsWith("자동발견(") || note.contains("촉매점수")) {
+                continue;   // 수동 등록이거나 이미 새 기준으로 등록된 후보
+            }
+            candidateMapper.deactivate(c.getSymbol());
+            log.info("후보 재심사 해제(구 게이트 등록분): {} - {}", c.getSymbol(), note);
+        }
     }
 
     private void addNewCandidates() {
@@ -87,7 +113,8 @@ public class CandidateDiscoveryService {
                 }
                 // #865 1단 게이트: 등급(S4↑)만으로는 통과율 37%로 사실상 무필터였다.
                 // 원칙 §3 기준의 촉매 자격을 사실(facts)로 판정한다 — facts 없으면 매수 금지.
-                CatalystQualifier.Verdict v = CatalystQualifier.qualify(NewsFacts.parse(n.getFacts()));
+                CatalystQualifier.Verdict v = CatalystQualifier.qualify(
+                        NewsFacts.parse(n.getFacts()), n.getTitle());
                 if (!v.pass()) {
                     log.debug("촉매 자격 미달({}): {} - {}", v.reason(), symbol, n.getTitle());
                     continue;

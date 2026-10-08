@@ -203,6 +203,53 @@ class CandidateDiscoveryServiceTest {
         verify(candidateMapper, never()).insert(any());
     }
 
+    // ---- #869 구 게이트 후보 재심사 ----
+
+    private static AutoTradeCandidate candidate(String symbol, String note) {
+        AutoTradeCandidate c = new AutoTradeCandidate();
+        c.setSymbol(symbol);
+        c.setMarket("KR");
+        c.setValuationNote(note);
+        return c;
+    }
+
+    @Test
+    void 구게이트_등록_후보는_재심사로_해제된다() {
+        // 통과율 37% 시절 들어온 후보 — 노트에 촉매점수가 없다.
+        when(candidateMapper.findActive()).thenReturn(List.of(
+                candidate("145170", "자동발견(2026-10-07T09:00:15.300134): 노브랜드 버거, 대학가 매장 확대")));
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
+
+        service.refresh();
+
+        verify(candidateMapper).deactivate("145170");
+    }
+
+    @Test
+    void 새_게이트로_등록된_후보는_유지된다() {
+        when(candidateMapper.findActive()).thenReturn(List.of(
+                candidate("443060", "자동발견(2026-10-08T17:15:01, 촉매점수 3/4): HD현대마린솔루션 수주")));
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
+        when(newsFadeDetector.hasNewsFaded("443060")).thenReturn(false);
+
+        service.refresh();
+
+        verify(candidateMapper, never()).deactivate("443060");
+    }
+
+    @Test
+    void 수동_등록_후보는_재심사로_해제되지_않는다() {
+        // 인수조건 7 — 사람이 넣은 것은 자동 판정으로 뺄 권한이 없다.
+        when(candidateMapper.findActive()).thenReturn(List.of(
+                candidate("005930", "수동 등록: 장기 관찰")));
+        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
+        when(newsFadeDetector.hasNewsFaded("005930")).thenReturn(false);
+
+        service.refresh();
+
+        verify(candidateMapper, never()).deactivate("005930");
+    }
+
     @Test
     void 촉매점수가_노트에_기록된다() {
         // 인수조건 3 — 판정 근거의 설명 가능성.

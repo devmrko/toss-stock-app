@@ -41,12 +41,23 @@ public final class CatalystQualifier {
      * </ul>
      *
      * @param facts 추출된 사실. <b>null 허용</b> — 추출 전면 실패 신호이며 fail-closed.
+     * @param title 기사 제목. null 허용 — 그때는 제목 가드가 작동하지 않는다.
      */
-    public static Verdict qualify(NewsFacts facts) {
+    public static Verdict qualify(NewsFacts facts, String title) {
         if (facts == null) {
             return new Verdict(false, "사실 추출 실패", 0);
         }
         int score = score(facts);
+
+        // 0. 결정론적 제목 가드(#869) — LLM 판정보다 먼저. 라이브에서 LLM 이 인수 주체를
+        //    SELLER 로, 2조 적자를 riskFlag=NONE 으로 응답한 사례가 실제로 후보 등록까지 갔다.
+        //    정규식으로 결정되는 것을 LLM 에 묻지 않는다. 차단만 추가하므로 안전 방향이 단조롭다.
+        if (TitleGuard.lossSide(title)) {
+            return new Verdict(false, "리스크 이벤트(LOSS·제목판정)", score);
+        }
+        if (TitleGuard.buyerSide(title)) {
+            return new Verdict(false, "수혜 주체 아님(BUYER·제목판정)", score);
+        }
 
         // 1. 리스크 이벤트 — 긍정 사실이 함께 있어도 상쇄되지 않는다(원칙 §3-3, §3-5).
         String risk = facts.riskFlag();
