@@ -102,9 +102,8 @@ public class AutoTradeScheduler {
         if (openSlots <= 0) {
             return;
         }
-        if (!marketGateOpen()) {
-            return;
-        }
+        // #879: 전역 게이트를 제거했다. 시장상황 게이트는 KR 전종목 breadth 라, 코스피가
+        // 급락하면 그 이유로 미국 주식 매수까지 막혔다. 후보별로 그 종목의 시장 기준으로 본다.
         scanCandidates(openSlots);
     }
 
@@ -197,18 +196,37 @@ public class AutoTradeScheduler {
         return trip;
     }
 
-    private boolean marketGateOpen() {
-        Map<String, Object> breadth = dailyMapper.breadth(100);
+    /**
+     * 해당 시장의 시장상황 게이트(#879). 틱 로컬 캐시로 시장당 1회만 조회한다.
+     *
+     * <p>이전에는 시장 구분 없이 KR 전종목 breadth 로 판정해, 코스피가 급락하면 그 이유로
+     * 미국 주식 매수까지 막혔다. 실측(2026-10-08): 기준일 join 에 KR 3,699종목 / US 7종목 —
+     * US 는 breadth 를 계산할 수 없고, 표본 부족은 {@link MarketRegimeGate} 가 '신호 없음'
+     * 으로 보고 통과시킨다.
+     */
+    private boolean regimeOpen(String market, Map<String, Boolean> cache) {
+        String key = market == null ? "KR" : market.toUpperCase();
+        Boolean cached = cache.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        Map<String, Object> breadth = dailyMapper.breadth(key, props.gate().minBreadthSample());
         long up = numberOf(breadth == null ? null : breadth.get("UP"));
         long total = numberOf(breadth == null ? null : breadth.get("TOTAL"));
-        int breadthPct = total > 0 ? (int) Math.round(up * 100.0 / total) : 50; // 데이터 없으면 중립값
-
-        return MarketRegimeGate.evaluate(breadthPct, props.gate());
+        int breadthPct = total > 0 ? (int) Math.round(up * 100.0 / total) : 0;
+        boolean open = MarketRegimeGate.evaluate(breadthPct, (int) total, props.gate());
+        if (total < props.gate().minBreadthSample()) {
+            log.info("{} 시장상황 신호 없음(표본 {}종목 < {}) — 게이트 통과 처리",
+                    key, total, props.gate().minBreadthSample());
+        }
+        cache.put(key, open);
+        return open;
     }
 
     private void scanCandidates(int openSlots) {
         List<AutoTradeCandidate> candidates = candidateMapper.findActive();
         List<AutoTradePosition> holding = positionMapper.findHolding();
+        Map<String, Boolean> regimeCache = new java.util.HashMap<>();   // #879 시장당 1회 조회
         int filled = 0;
         for (AutoTradeCandidate c : candidates) {
             if (filled >= openSlots) {
@@ -219,6 +237,9 @@ public class AutoTradeScheduler {
             }
             if (!MarketHours.isOpen(c.getMarket(), LocalDateTime.now())) {
                 continue; // 그 시장이 지금 닫혀있음(KST 기준, 한국/미국 각각 판단)
+            }
+            if (!regimeOpen(c.getMarket(), regimeCache)) {
+                continue; // #879 그 시장의 시장상황 게이트(KR breadth 가 US 를 막지 않게)
             }
             if (recentlyExitedViaStop(c.getSymbol())) {
                 continue; // #839 실사고 수정 — 손절 직후 즉시 재진입하면 더 비싼 가격에 되사는

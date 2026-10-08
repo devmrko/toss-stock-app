@@ -47,7 +47,8 @@ public class MarketOverviewController {
         out.put("marketNote", note);
 
         // 상승비율 — 커버리지 충분한 거래일끼리 비교(수동 백필 오염 방지)
-        Map<String, Object> b = dailyMapper.breadth(BREADTH_MIN_COVERAGE);
+        // #879 시장 파라미터 추가. 이 화면은 국내 시황이므로 KR.
+        Map<String, Object> b = dailyMapper.breadth("KR", BREADTH_MIN_COVERAGE);
         long up = num(b == null ? null : b.get("UP"));
         long total = num(b == null ? null : b.get("TOTAL"));
         out.put("up", up);

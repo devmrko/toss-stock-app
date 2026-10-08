@@ -61,7 +61,7 @@ class AutoTradeSchedulerTest {
         return new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI",
                 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000),
-                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35));
+                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100));
     }
 
     @BeforeEach
@@ -341,7 +341,7 @@ class AutoTradeSchedulerTest {
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
-        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L)); // 시장 게이트 통과
+        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L)); // 시장 게이트 통과
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
@@ -372,7 +372,7 @@ class AutoTradeSchedulerTest {
         when(stateMapper.find()).thenReturn(state());
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
         when(valuationClient.getValuation(SYMBOL, "KR"))
@@ -399,7 +399,7 @@ class AutoTradeSchedulerTest {
         when(stateMapper.find()).thenReturn(state());
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(extremeMoveBars());
@@ -424,7 +424,7 @@ class AutoTradeSchedulerTest {
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
-        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(extremeMoveBars());
@@ -456,7 +456,7 @@ class AutoTradeSchedulerTest {
         when(stateMapper.find()).thenReturn(state());
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(bars);
@@ -482,7 +482,7 @@ class AutoTradeSchedulerTest {
         when(stateMapper.find()).thenReturn(state());
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(positionMapper.lastStopExitAt(SYMBOL)).thenReturn(LocalDateTime.now().minusSeconds(7));
 
@@ -502,7 +502,7 @@ class AutoTradeSchedulerTest {
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
-        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(positionMapper.lastStopExitAt(SYMBOL)).thenReturn(LocalDateTime.now().minusMinutes(31));
         when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
@@ -529,7 +529,7 @@ class AutoTradeSchedulerTest {
         when(stateMapper.find()).thenReturn(state());
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
         when(candidateDiscovery.retainDespiteNewsFade(c)).thenReturn(true);
@@ -549,7 +549,7 @@ class AutoTradeSchedulerTest {
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
-        when(dailyMapper.breadth(anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
         when(candidateDiscovery.retainDespiteNewsFade(c)).thenReturn(true);
@@ -593,5 +593,71 @@ class AutoTradeSchedulerTest {
         n.setSentiment(sentiment);
         n.setKind("EVENT");
         return n;
+    }
+
+    // ---- #879 시장상황 게이트는 시장별로 ----
+
+    @Test
+    void KR_breadth가_낮아도_US_후보는_막히지_않는다() {
+        // 인수조건 2 — 이 버그의 핵심. 코스피가 급락하면 그 이유로 미국 주식 매수가 막혔다.
+        AutoTradeCandidate us = new AutoTradeCandidate();
+        us.setSymbol("TSM");
+        us.setMarket("US");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(candidateMapper.findActive()).thenReturn(List.of(us));
+        // KR 은 임계 미만(10%), US 는 표본 부족(7종목) → 신호 없음 → 통과
+        when(dailyMapper.breadth(eq("KR"), anyInt())).thenReturn(Map.of("UP", 10L, "TOTAL", 100L));
+        when(dailyMapper.breadth(eq("US"), anyInt())).thenReturn(Map.of("UP", 3L, "TOTAL", 7L));
+        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
+        when(valuationClient.getValuation("TSM", "US"))
+                .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
+        when(priceCache.get(List.of("TSM")))
+                .thenReturn(List.of(new TossPrice("TSM", "102000", "USD", null)));
+
+        scheduler.tick();
+
+        // KR breadth 10% 로는 예전이라면 scanCandidates 자체가 스킵됐다.
+        // 이제는 US 후보가 그 시장 기준으로 평가돼 매수 경로까지 간다.
+        verify(dailyMapper).breadth(eq("US"), anyInt());
+        verify(orderExecutor).buy(eq("TSM"), eq("US"), any(), any(), anyString());
+    }
+
+    @Test
+    void KR_breadth가_낮으면_KR_후보는_막힌다() {
+        // 인수조건 5 — KR 판정은 변경 전과 같아야 한다.
+        AutoTradeCandidate kr = new AutoTradeCandidate();
+        kr.setSymbol(SYMBOL);
+        kr.setMarket("KR");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(candidateMapper.findActive()).thenReturn(List.of(kr));
+        when(dailyMapper.breadth(eq("KR"), anyInt())).thenReturn(Map.of("UP", 10L, "TOTAL", 3699L));
+
+        scheduler.tick();
+
+        verify(orderExecutor, org.mockito.Mockito.never()).buy(any(), any(), any(), any(), anyString());
+    }
+
+    @Test
+    void 같은_시장_후보가_여러건이어도_breadth는_한번만_조회한다() {
+        // 인수조건 6 — 틱 로컬 캐시.
+        AutoTradeCandidate a = new AutoTradeCandidate();
+        a.setSymbol("005930");
+        a.setMarket("KR");
+        AutoTradeCandidate b = new AutoTradeCandidate();
+        b.setSymbol("000660");
+        b.setMarket("KR");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(candidateMapper.findActive()).thenReturn(List.of(a, b));
+        when(dailyMapper.breadth(eq("KR"), anyInt())).thenReturn(Map.of("UP", 10L, "TOTAL", 3699L));
+
+        scheduler.tick();
+
+        verify(dailyMapper, org.mockito.Mockito.times(1)).breadth(eq("KR"), anyInt());
     }
 }

@@ -108,11 +108,22 @@
         ORDER BY symbol
     </select>
 
+    <!-- #879 시장별 breadth. 기존엔 시장 필터가 없어 KR breadth 로 US 매수까지 게이트했다. -->
     <select id="breadth" resultType="map">
-        WITH covered AS (
-            SELECT trade_date
-            FROM daily_ohlcv
-            GROUP BY trade_date
+        WITH mkt AS (
+            <choose>
+                <when test="market != null and market.toUpperCase() == 'US'">
+                    SELECT symbol FROM us_universe
+                </when>
+                <otherwise>
+                    SELECT symbol FROM universe
+                </otherwise>
+            </choose>
+        ),
+        covered AS (
+            SELECT d.trade_date
+            FROM daily_ohlcv d JOIN mkt m ON m.symbol = d.symbol
+            GROUP BY d.trade_date
             HAVING COUNT(*) &gt;= #{minCoverage}
         ),
         ref AS (SELECT MAX(trade_date) d FROM covered),
@@ -121,6 +132,7 @@
             SELECT SUM(CASE WHEN t.close_p &gt; p.close_p THEN 1 ELSE 0 END) AS up,
                    COUNT(*) AS total
             FROM daily_ohlcv t
+            JOIN mkt m ON m.symbol = t.symbol
             JOIN daily_ohlcv p ON p.symbol = t.symbol
             WHERE t.trade_date = (SELECT d FROM ref)
               AND p.trade_date = (SELECT d FROM prv)

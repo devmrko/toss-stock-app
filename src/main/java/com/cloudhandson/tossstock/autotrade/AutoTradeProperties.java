@@ -47,7 +47,13 @@ public record AutoTradeProperties(
         return webhookUrl != null && !webhookUrl.isBlank();
     }
 
-    /** 시장상황 게이트 임계값 — "운영하면서 조정" 대상(하드코딩 금지). */
-    public record Gate(int minBreadthPct) {
+    /**
+     * 시장상황 게이트 임계값 — "운영하면서 조정" 대상(하드코딩 금지).
+     *
+     * @param minBreadthSample breadth 집계 최소 표본(#879). 미만이면 '신호 없음'으로 보고
+     *                         통과시킨다. 기본 100 — 기존 breadth(minCoverage=100) 와 같은 수치를
+     *                         써서 새 임계값을 발명하지 않는다.
+     */
+    public record Gate(int minBreadthPct, int minBreadthSample) {
     }
 }

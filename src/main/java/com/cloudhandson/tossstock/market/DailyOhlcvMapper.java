@@ -28,7 +28,15 @@ public interface DailyOhlcvMapper {
                                       @Param("fromDate") LocalDate fromDate);
 
     /** 커버리지(minCoverage 종목 이상) 충분한 최신 거래일 기준 상승/전체. {REF_DATE, PREV_DATE, UP, TOTAL}. */
-    Map<String, Object> breadth(@Param("minCoverage") int minCoverage);
+    /**
+     * 시장별 상승비율(#879). market 이 "US" 면 us_universe, 그 외는 universe 조인.
+     * 반환 map: ref_date / prev_date / up / total.
+     *
+     * <p>#879 이전에는 시장 필터가 없어 KR 전종목 breadth 로 US 매수까지 게이트했다.
+     * 실측(2026-10-08): 기준일 join 에 KR 3,699종목 / US 7종목 — US 는 표본이 없다.
+     */
+    Map<String, Object> breadth(@Param("market") String market,
+                                 @Param("minCoverage") int minCoverage);
 
     /**
      * 섹터 평균 수익률(#874) — 원칙 §6-1 상대강도. since 이후 창에서 종목별

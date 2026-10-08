@@ -14,10 +14,20 @@ public final class MarketRegimeGate {
     private MarketRegimeGate() {
     }
 
-    /** @param breadthPct 0~100. 시장 상승비율. */
-    public static boolean evaluate(int breadthPct, AutoTradeProperties.Gate props) {
+    /**
+     * @param breadthPct 0~100. 해당 시장의 상승비율.
+     * @param sampleSize 집계에 들어간 종목 수. <b>최소치 미만이면 '신호 없음'으로 보고
+     *                   통과시킨다</b>(#879) — 7종목짜리 breadth 로 실매매를 막을 수 없고,
+     *                   KR 분포(최근 25거래일 16.3~69.9%, 중앙값 ≈45%)로 캘리브레이션한
+     *                   임계값을 표본이 다른 시장에 적용할 근거도 없다.
+     *                   표본 수로 판단하므로 커버리지가 늘면 코드 변경 없이 게이트가 켜진다.
+     */
+    public static boolean evaluate(int breadthPct, int sampleSize, AutoTradeProperties.Gate props) {
         if (breadthPct < 0 || breadthPct > 100) {
             throw new IllegalArgumentException("breadthPct must be in [0,100]: " + breadthPct);
+        }
+        if (sampleSize < props.minBreadthSample()) {
+            return true;   // 신호 없음 → 중립(통과)
         }
         return breadthPct >= props.minBreadthPct();
     }
