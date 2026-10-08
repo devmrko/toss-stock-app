@@ -53,7 +53,7 @@
                targets, sentiment, rationale, kind, model, expires_at
         FROM stock_news
         WHERE status = 'ANALYZED'
-          AND expires_at &gt; SYSTIMESTAMP
+          AND expires_at &gt; CURRENT_TIMESTAMP
         <if test="key != null">
           AND ',' || targets || ',' LIKE '%,' || #{key} || ',%'
         </if>
@@ -63,7 +63,7 @@
 
     <select id="activeSentiments" resultType="string">
         SELECT sentiment FROM stock_news
-        WHERE status = 'ANALYZED' AND expires_at &gt; SYSTIMESTAMP AND sentiment IS NOT NULL
+        WHERE status = 'ANALYZED' AND expires_at &gt; CURRENT_TIMESTAMP AND sentiment IS NOT NULL
         ORDER BY COALESCE(published_at, fetched_at) DESC
     </select>
 
@@ -83,7 +83,7 @@
 
     <update id="expireOld">
         UPDATE stock_news SET status = 'EXPIRED'
-        WHERE status = 'ANALYZED' AND expires_at &lt;= SYSTIMESTAMP
+        WHERE status = 'ANALYZED' AND expires_at &lt;= CURRENT_TIMESTAMP
     </update>
 
     <select id="forSymbolBetween" resultMap="newsMap">

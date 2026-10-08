@@ -28,3 +28,12 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1430 THEN RAISE; END IF;
 END;
 /
+-- #867 fetched_at 기본값을 UTC(SYSTIMESTAMP) → KST(CURRENT_TIMESTAMP) 로 교정.
+-- SYSTIMESTAMP 는 DB 타임존(UTC), CURRENT_TIMESTAMP 는 세션 타임존(Asia/Seoul)이다.
+-- 이 프로젝트의 다른 시각 컬럼은 전부 KST 라, 이 컬럼만 9시간 과거로 기록돼
+-- findRecentEvents 의 실효 조회구간이 24시간이 아니라 15시간이었다.
+-- MODIFY DEFAULT 는 같은 값으로 반복 실행해도 예외가 없다(멱등).
+BEGIN
+  EXECUTE IMMEDIATE 'ALTER TABLE stock_news MODIFY (fetched_at DEFAULT CURRENT_TIMESTAMP)';
+END;
+/
