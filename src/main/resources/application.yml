@@ -134,6 +134,15 @@ auto-trade:
   # 이 배수를 넘으면 촉매 키워드가 있어도 면제하지 않는다(기본 3배 = PER 90 / PBR 9).
   # 실측: 포스코퓨처엠 PER 392·삼성SDI PER없음이 촉매 하나로 전 필터를 면제받고 손실.
   catalyst-valuation-multiple: ${AUTO_TRADE_CATALYST_VALUATION_MULTIPLE:3.0}
+
+  # #873 원칙 §4 추적손절 완화 — "대박 구간(+300% 등)은 -15~20%로 완화 가능".
+  # 멀티배거를 10% 흔들림에 털리지 않게 한다. 임계는 원칙 문서의 예시 수치(+300%)를,
+  # 완화폭은 원칙이 준 15~20% 중 보수적인 쪽(15%)을 기본값으로 둔다. 측정 기준은 피크.
+  multibagger-gain-pct: ${AUTO_TRADE_MULTIBAGGER_GAIN_PCT:300.0}
+  multibagger-trail-stop-pct: ${AUTO_TRADE_MULTIBAGGER_TRAIL_STOP_PCT:15.0}
+  # #873 원칙 §4 "지수 하락기 보정 — 지수 대비 -10% 언더퍼폼 시 교체 고려".
+  # 원칙이 손절은 "필수 하드룰"로, 이건 "고려"로 쓰므로 자동 매도하지 않고 알림만 보낸다.
+  index-lag-alert-pct: ${AUTO_TRADE_INDEX_LAG_ALERT_PCT:10.0}
   gate:
     # 2026-09-30: 35→20으로 완화. 실측(최근 25거래일 breadth 분포: 16.3~69.9%, 중앙값≈45%) —
     # 35 기준은 5/25일(20%, 오늘 30.8% 포함하는 통상적 약세일까지)을 통째로 막았음. 사용자가

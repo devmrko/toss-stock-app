@@ -37,6 +37,9 @@ public record AutoTradeProperties(
         double maxExtensionPct,
         int extensionLookbackDays,
         double catalystValuationMultiple,
+        double multibaggerGainPct,
+        double multibaggerTrailStopPct,
+        double indexLagAlertPct,
         @NestedConfigurationProperty Gate gate) {
 
     public boolean alertsEnabled() {

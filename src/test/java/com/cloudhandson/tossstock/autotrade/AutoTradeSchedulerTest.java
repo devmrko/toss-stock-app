@@ -53,6 +53,7 @@ class AutoTradeSchedulerTest {
     private OrderExecutor orderExecutor;
     private AutoTradeScheduler scheduler;
     private RiskEventDetector riskEventDetector;
+    private IndexLagAlertService indexLagAlert;
     private MockedStatic<MarketHours> marketHours;
 
     /** 운영 yml 과 같은 형태. 펀더멘털 통과 기준만 1로 낮춰(재무데이터 없는 환경) 매수 경로를 끝까지 태운다. */
@@ -60,7 +61,7 @@ class AutoTradeSchedulerTest {
         return new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI",
                 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000),
-                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 6.0, 5, 3.0, new AutoTradeProperties.Gate(35));
+                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, new AutoTradeProperties.Gate(35));
     }
 
     @BeforeEach
@@ -73,6 +74,7 @@ class AutoTradeSchedulerTest {
         priceCache = mock(PriceCache.class);
         newsFadeDetector = mock(NewsFadeDetector.class);
         riskEventDetector = mock(RiskEventDetector.class);
+        indexLagAlert = mock(IndexLagAlertService.class);
         valuationClient = mock(ValuationClient.class);
         catalystDetector = mock(CapitalReturnCatalystDetector.class);
         universeMapper = mock(UniverseMapper.class);
@@ -81,7 +83,7 @@ class AutoTradeSchedulerTest {
         scheduler = new AutoTradeScheduler(props(), stateMapper, positionMapper, candidateMapper, dailyMapper,
                 newsMapper, priceCache, newsFadeDetector, riskEventDetector, valuationClient,
                 catalystDetector, universeMapper,
-                candidateDiscovery, orderExecutor, mock(DiscordClient.class));
+                candidateDiscovery, orderExecutor, mock(DiscordClient.class), indexLagAlert);
         marketHours = mockStatic(MarketHours.class);
         marketHours.when(() -> MarketHours.isOpen(anyString(), any(LocalDateTime.class))).thenReturn(true);
     }
@@ -231,6 +233,68 @@ class AutoTradeSchedulerTest {
         assertThat(rationale.getValue())
                 .startsWith("리스크이벤트(")
                 .contains("사유:GOVERNANCE \"삼성전자, 횡령 혐의 조사\"");
+    }
+
+    // ---- #873 원칙 §4 미구현 조항 ----
+
+    @Test
+    void 지수_열위는_매도를_유발하지_않고_알림만_간다() {
+        // 인수조건 4 — 원칙이 손절은 "필수 하드룰"로, 이건 "교체 고려"로 쓴다.
+        holdingAt("225000");
+
+        scheduler.tick();
+
+        verify(orderExecutor, org.mockito.Mockito.never()).sell(any(), any(), any(), any());
+        verify(indexLagAlert).checkAndAlert(any());
+    }
+
+    @Test
+    void 매도되는_포지션엔_교체고려_알림을_보내지_않는다() {
+        // 어차피 파는 포지션에 "교체 고려"는 잡음이다.
+        holdingAt("210500");   // 트레일손절선 이탈 → 매도
+
+        scheduler.tick();
+
+        verify(orderExecutor).sell(any(), eq(ExitReason.TRAIL_STOP), any(), any());
+        verify(indexLagAlert, org.mockito.Mockito.never()).checkAndAlert(any());
+    }
+
+    @Test
+    void 멀티배거_포지션은_완화된_추적선이_결정근거에_찍힌다() {
+        // 인수조건 7 — 판정과 로그가 같은 손절선을 써야 사후 검증이 성립한다.
+        // 진입 10,000 / 피크 40,000(+300%) → 완화폭 15% → 트레일선 34,000.
+        AutoTradePosition p = holding();
+        p.setEntryPrice(BigDecimal.valueOf(10_000));
+        p.setPeakPrice(BigDecimal.valueOf(40_000));
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of(p));
+        when(positionMapper.countHolding()).thenReturn(1);
+        when(priceCache.get(List.of(SYMBOL)))
+                .thenReturn(List.of(new TossPrice(SYMBOL, "33000", "KRW", null)));
+
+        scheduler.tick();
+
+        ArgumentCaptor<String> rationale = ArgumentCaptor.forClass(String.class);
+        verify(orderExecutor).sell(any(), eq(ExitReason.TRAIL_STOP), any(), rationale.capture());
+        // 완화 전(10%)이면 36,000 이 찍혔을 자리
+        assertThat(rationale.getValue()).contains("트레일34000");
+    }
+
+    @Test
+    void 멀티배거_구간에선_기존_10퍼센트_손절선에_걸리지_않는다() {
+        // 인수조건 5 — 피크 -12% 는 완화폭(15%) 안쪽이라 버틴다.
+        AutoTradePosition p = holding();
+        p.setEntryPrice(BigDecimal.valueOf(10_000));
+        p.setPeakPrice(BigDecimal.valueOf(40_000));
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of(p));
+        when(positionMapper.countHolding()).thenReturn(1);
+        when(priceCache.get(List.of(SYMBOL)))
+                .thenReturn(List.of(new TossPrice(SYMBOL, "35200", "KRW", null)));   // 피크 -12%
+
+        scheduler.tick();
+
+        verify(orderExecutor, org.mockito.Mockito.never()).sell(any(), any(), any(), any());
     }
 
     @Test

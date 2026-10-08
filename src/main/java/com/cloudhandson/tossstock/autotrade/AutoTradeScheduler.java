@@ -41,6 +41,7 @@ public class AutoTradeScheduler {
     private final PriceCache priceCache;
     private final NewsFadeDetector newsFadeDetector;
     private final RiskEventDetector riskEventDetector;
+    private final IndexLagAlertService indexLagAlert;
     private final ValuationClient valuationClient;
     private final CapitalReturnCatalystDetector capitalReturnCatalystDetector;
     private final UniverseMapper universeMapper;
@@ -55,7 +56,8 @@ public class AutoTradeScheduler {
                                ValuationClient valuationClient,
                                CapitalReturnCatalystDetector capitalReturnCatalystDetector,
                                UniverseMapper universeMapper, CandidateDiscoveryService candidateDiscovery,
-                               OrderExecutor orderExecutor, DiscordClient discord) {
+                               OrderExecutor orderExecutor, DiscordClient discord,
+                               IndexLagAlertService indexLagAlert) {
         this.props = props;
         this.stateMapper = stateMapper;
         this.positionMapper = positionMapper;
@@ -71,6 +73,7 @@ public class AutoTradeScheduler {
         this.candidateDiscovery = candidateDiscovery;
         this.orderExecutor = orderExecutor;
         this.discord = discord;
+        this.indexLagAlert = indexLagAlert;
     }
 
     @Scheduled(cron = "${auto-trade.cron:0 * * * * *}", zone = "Asia/Seoul")
@@ -118,8 +121,12 @@ public class AutoTradeScheduler {
             positionMapper.updatePeak(p.getId(), peak);
         }
 
+        // #873 원칙 §4 "대박 구간(+300% 등)은 -15~20%로 완화 가능" — 멀티배거를 10% 흔들림에
+        // 털리지 않게 한다. 판정과 결정근거 로그가 같은 손절선을 쓰도록 여기서 한 번 해소한다.
+        double trailPct = TrailingStopCalculator.effectiveTrailPct(peak, p.getEntryPrice(),
+                props.trailStopPct(), props.multibaggerGainPct(), props.multibaggerTrailStopPct());
         ExitReason exit = TrailingStopCalculator.decide(current, peak, p.getEntryPrice(),
-                props.hardStopPct(), props.trailStopPct());
+                props.hardStopPct(), trailPct);
         // #871: 여기 있던 NEWS_FADED 매도 분기를 제거했다. hasNewsFaded 는 "미만료 S4+ 기사가
         // 없음"이고 TTL 이 S4=8h 라, S4 기사로 산 포지션이 가격과 무관하게 8시간 뒤 강제 매도됐다.
         // 투자원칙 §4 의 매도 규칙은 진입가 -10%, 고점 -10% 추적, 지수 열위 교체 셋뿐이며
@@ -150,9 +157,13 @@ public class AutoTradeScheduler {
             // 결정근거 스냅샷(#832) — 하드/트레일 손절선은 판정에 쓴 바로 그 공식으로 재계산(부수효과 없음).
             String rationale = SellRationale.describe(exit, p.getEntryPrice(), peak, current,
                     TrailingStopCalculator.hardFloor(p.getEntryPrice(), props.hardStopPct()),
-                    TrailingStopCalculator.trailFloor(peak, props.trailStopPct()), riskNote);
+                    TrailingStopCalculator.trailFloor(peak, trailPct), riskNote);
             orderExecutor.sell(p, exit, current, rationale);
+            return;   // 어차피 파는 포지션에 "교체 고려" 알림은 잡음이다
         }
+        // #873 원칙 §4 "지수 하락기 보정 — 지수 대비 -10% 언더퍼폼 시 교체 고려".
+        // 원칙이 손절은 "필수 하드룰"로, 이건 "고려"로 쓰므로 자동 매도하지 않고 알림만 보낸다.
+        indexLagAlert.checkAndAlert(p);
     }
 
     /** 전체 평가손익(원금 대비) 계산 후 임계치 도달 시 트립 처리. */
