@@ -131,4 +131,30 @@
         FROM agg
     </select>
 
+    <!-- #874 섹터 평균 수익률(원칙 §6-1 상대강도). 종목 3개 미만 섹터는 표본 부족으로 제외. -->
+    <select id="sectorReturns" resultType="com.cloudhandson.tossstock.market.SectorReturn">
+        WITH w AS (
+            SELECT u.sector AS sector, d.symbol AS symbol,
+                   FIRST_VALUE(d.close_p) OVER (PARTITION BY d.symbol ORDER BY d.trade_date)
+                       AS first_close,
+                   LAST_VALUE(d.close_p) OVER (PARTITION BY d.symbol ORDER BY d.trade_date
+                       ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_close
+            FROM daily_ohlcv d
+            JOIN universe u ON u.symbol = d.symbol
+            WHERE d.trade_date &gt;= #{since} AND u.sector IS NOT NULL AND d.close_p IS NOT NULL
+        ), per_symbol AS (
+            SELECT sector, symbol, MAX(first_close) AS fc, MAX(last_close) AS lc,
+                   COUNT(*) AS bars
+            FROM w GROUP BY sector, symbol
+        )
+        SELECT sector,
+               ROUND(AVG((lc - fc) / fc * 100), 2) AS return_pct,
+               COUNT(*) AS symbols
+        FROM per_symbol
+        WHERE fc &gt; 0 AND bars &gt;= #{minBars}
+        GROUP BY sector
+        HAVING COUNT(*) &gt;= 3
+        ORDER BY 2 DESC
+    </select>
+
 </mapper>

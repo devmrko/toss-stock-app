@@ -30,6 +30,21 @@ public interface DailyOhlcvMapper {
     /** 커버리지(minCoverage 종목 이상) 충분한 최신 거래일 기준 상승/전체. {REF_DATE, PREV_DATE, UP, TOTAL}. */
     Map<String, Object> breadth(@Param("minCoverage") int minCoverage);
 
+    /**
+     * 섹터 평균 수익률(#874) — 원칙 §6-1 상대강도. since 이후 창에서 종목별
+     * (마지막종가/첫종가-1)을 섹터로 평균한다. 수익률 내림차순.
+     *
+     * <p>두 가지 표본 조건이 있다.
+     * <ul>
+     *   <li>{@code minBars} — 창 내 봉이 이만큼 있는 종목만 센다. 없으면 데이터가 3봉뿐인
+     *       종목의 3일 수익률과 20봉 종목의 20일 수익률이 섞여 섹터 순위가 왜곡된다
+     *       (실측: 지수가 -4.25%인 창에서 섹터 평균이 대부분 양수로 나왔다).</li>
+     *   <li>종목 3개 미만 섹터 제외 — 표본이 적으면 극단값이 나온다.</li>
+     * </ul>
+     */
+    List<SectorReturn> sectorReturns(@Param("since") java.time.LocalDate since,
+                                      @Param("minBars") int minBars);
+
     /** 종목별 (fromDate 이후) 고점/저점 일괄. pairs=[{symbol, fromDate}...] → [{SYMBOL, MAXHIGH, MINLOW}]. */
     List<Map<String, Object>> peakTroughBatch(@Param("pairs") List<Map<String, Object>> pairs);
 

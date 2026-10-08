@@ -40,6 +40,7 @@ public record AutoTradeProperties(
         double multibaggerGainPct,
         double multibaggerTrailStopPct,
         double indexLagAlertPct,
+        String weeklyReviewCron,
         @NestedConfigurationProperty Gate gate) {
 
     public boolean alertsEnabled() {
