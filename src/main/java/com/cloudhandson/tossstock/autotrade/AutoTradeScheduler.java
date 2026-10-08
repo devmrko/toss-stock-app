@@ -42,6 +42,13 @@ public class AutoTradeScheduler {
     private final NewsFadeDetector newsFadeDetector;
     private final RiskEventDetector riskEventDetector;
     private final IndexLagAlertService indexLagAlert;
+
+    /**
+     * 최신 1틱의 매수 스캔 판정 스냅샷(#884). 틱마다 교체한다(누적 아님) — 질문이
+     * "지금 왜 안 사는가"이므로 최신 상태가 답이고, 누적하면 메모리가 무한히 자란다.
+     */
+    private volatile List<ScanVerdict> lastScan = List.of();
+    private volatile LocalDateTime lastScanAt;
     private final ValuationClient valuationClient;
     private final CapitalReturnCatalystDetector capitalReturnCatalystDetector;
     private final UniverseMapper universeMapper;
@@ -81,6 +88,7 @@ public class AutoTradeScheduler {
         AutoTradeState state = stateMapper.find();
         if (state == null) {
             log.warn("auto_trade_state 없음 — 스키마 초기화 확인 필요");
+            publishScan(List.of(ScanVerdict.tick("NO_STATE", "auto_trade_state 행 없음")), 0);
             return;
         }
 
@@ -95,16 +103,46 @@ public class AutoTradeScheduler {
 
         boolean tripped = checkCircuitBreaker(state);
         if (tripped || state.isCircuitBreakerTripped()) {
-            return; // 서킷브레이커 상태 — 신규 매수 전부 스킵(매도는 이미 위에서 처리됨)
+            // 서킷브레이커 상태 — 신규 매수 전부 스킵(매도는 이미 위에서 처리됨)
+            publishScan(List.of(ScanVerdict.tick("CIRCUIT_BREAKER", "서킷브레이커 발동 상태")), 0);
+            return;
         }
 
         int openSlots = props.maxSymbols() - positionMapper.countHolding();
         if (openSlots <= 0) {
+            publishScan(List.of(ScanVerdict.tick("NO_SLOT",
+                    "보유 " + positionMapper.countHolding() + "/" + props.maxSymbols())), 0);
             return;
         }
         // #879: 전역 게이트를 제거했다. 시장상황 게이트는 KR 전종목 breadth 라, 코스피가
         // 급락하면 그 이유로 미국 주식 매수까지 막혔다. 후보별로 그 종목의 시장 기준으로 본다.
         scanCandidates(openSlots);
+    }
+
+    /** 최신 스캔 판정 스냅샷(#884). 대시보드·운영 확인용. */
+    public List<ScanVerdict> lastScan() {
+        return lastScan;
+    }
+
+    public LocalDateTime lastScanAt() {
+        return lastScanAt;
+    }
+
+    /**
+     * 스냅샷을 교체하고 요약 1줄만 로그로 남긴다 — 12개 탈락 지점 x 후보수를 전부
+     * INFO 로 쓰면 로그가 폭주한다.
+     */
+    private void publishScan(List<ScanVerdict> verdicts, int openSlots) {
+        lastScan = List.copyOf(verdicts);
+        lastScanAt = LocalDateTime.now();
+        if (verdicts.isEmpty()) {
+            return;
+        }
+        Map<String, Long> byStage = new java.util.LinkedHashMap<>();
+        for (ScanVerdict v : verdicts) {
+            byStage.merge(v.stage(), 1L, Long::sum);
+        }
+        log.info("매수 스캔: 판정 {}건 → {} (슬롯 {})", verdicts.size(), byStage, openSlots);
     }
 
     private void processHolding(AutoTradePosition p) {
@@ -278,41 +316,61 @@ public class AutoTradeScheduler {
         List<AutoTradeCandidate> candidates = candidateMapper.findActive();
         List<AutoTradePosition> holding = positionMapper.findHolding();
         Map<String, Boolean> regimeCache = new java.util.HashMap<>();   // #879 시장당 1회 조회
+        // #884 판정 계측 — 탈락 지점마다 사유를 남긴다. 분기 조건은 건드리지 않는다.
+        List<ScanVerdict> verdicts = new java.util.ArrayList<>();
+        if (candidates.isEmpty()) {
+            publishScan(List.of(ScanVerdict.tick("NO_CANDIDATE", "활성 후보 0건")), openSlots);
+            return;
+        }
         int filled = 0;
         for (AutoTradeCandidate c : candidates) {
             if (filled >= openSlots) {
                 break;
             }
             if (holding.stream().anyMatch(h -> h.getSymbol().equals(c.getSymbol()))) {
-                continue; // 이미 보유 중
+                verdicts.add(ScanVerdict.of(c, "ALREADY_HELD", "이미 보유 중"));
+                continue;
             }
             if (!MarketHours.isOpen(c.getMarket(), LocalDateTime.now())) {
-                continue; // 그 시장이 지금 닫혀있음(KST 기준, 한국/미국 각각 판단)
+                verdicts.add(ScanVerdict.of(c, "MARKET_CLOSED",
+                        c.getMarket() + " 장 마감(KST " + LocalDateTime.now().toLocalTime().withNano(0) + ")"));
+                continue;
             }
             if (!regimeOpen(c.getMarket(), regimeCache)) {
-                continue; // #879 그 시장의 시장상황 게이트(KR breadth 가 US 를 막지 않게)
+                verdicts.add(ScanVerdict.of(c, "REGIME", "시장상황 게이트 차단(#879/#883)"));
+                continue;
             }
             if (recentlyExitedViaStop(c.getSymbol())) {
+                verdicts.add(ScanVerdict.of(c, "STOP_COOLDOWN",
+                        "손절 후 " + props.stopExitCooldownMinutes() + "분 쿨다운(#839)"));
                 continue; // #839 실사고 수정 — 손절 직후 즉시 재진입하면 더 비싼 가격에 되사는
                           // 확정손실 왕복이 날 수 있음(066570 실사례, 7초 후 212,000→212,500
                           // 재매수). 뉴스/촉매 신선도와 무관하게 전체 매수 경로에 적용.
             }
             if (candidateDiscovery.isSameThemeAsRecentStopExit(c.getSymbol(), c.getMarket())) {
+                verdicts.add(ScanVerdict.of(c, "SAME_THEME", "당일 손절 포지션과 동일 테마(#840)"));
                 continue; // #840 — 오늘 손절된 포지션과 같은 테마(같은 스토리의 다음 기사)로
                           // 재진입하려는 경우, #839 쿨다운이 끝났어도 당일은 계속 차단.
             }
             if (newsFadeDetector.hasNewsFaded(c.getSymbol())) {
                 if (!candidateDiscovery.retainDespiteNewsFade(c)) {
-                    continue; // 호재(S4↑) 없고, 저평가+상대강세 예외(#828)도 아님
+                    verdicts.add(ScanVerdict.of(c, "NEWS_FADED",
+                            "호재(S4↑) 없고 저평가+상대강세 예외(#828)도 아님"));
+                    continue;
                 }
                 if (recentlyExitedViaNewsFade(c.getSymbol())) {
+                    verdicts.add(ScanVerdict.of(c, "FADE_COOLDOWN",
+                            "뉴스소멸 매도 후 " + props.newsFadedCooldownMinutes() + "분 쿨다운(#835)"));
                     continue; // #828 유지경로 쿨다운(#835 QA) — 뉴스소멸 매도 직후 같은 경로로 바로 재매수 금지
                 }
             }
             List<DailyOhlcv> recent = dailyMapper.recentForSymbols(List.of(c.getSymbol()),
                     LocalDate.now().minusDays(props.volumeSpikeWindowDays() + 10));
             if (!PopularityChecker.isPopular(recent, props.volumeSpikeWindowDays(), props.volumeSpikeMultiplier(), props.priceMovePct())) {
-                continue; // 인기 없음(거래량 스파이크도, 당일 가격 반응도 없음)
+                verdicts.add(ScanVerdict.of(c, "POPULARITY",
+                        "거래량 스파이크(x" + props.volumeSpikeMultiplier() + ")도 당일 가격반응("
+                                + props.priceMovePct() + "%)도 없음 · 일봉 " + recent.size() + "건"));
+                continue;
             }
             Valuation valuation = valuationClient.getValuation(c.getSymbol(), c.getMarket());
             boolean cheap = ValuationChecker.isUndervalued(valuation, props.maxPer(), props.maxPbr());
@@ -330,7 +388,8 @@ public class AutoTradeScheduler {
                     valuation, props.maxPer() * props.catalystValuationMultiple(), catalystPbrBound);
             BigDecimal current = currentPrice(c.getSymbol());
             if (current == null) {
-                continue; // 콜드 캐시 — 다음 틱 재시도
+                verdicts.add(ScanVerdict.of(c, "NO_PRICE", "현재가 조회 실패(콜드 캐시) — 다음 틱 재시도"));
+                continue;
             }
             // #838 취지(테마성 과열 추격매수 차단)를 #859로 측정 교정: 일봉 "당일 변동률"은 장중
             // 판단 시점엔 어제 값이거나 미완성 바라 "지금 이미 올라있다"를 못 봤고, 기준선이
@@ -338,21 +397,36 @@ public class AutoTradeScheduler {
             // 4건이 이 경로). 최근 N거래일 최저 종가 대비 "실시간 체결가" 상승률로 판정한다.
             Double extension = PriceExtension.pctAboveRecentLow(recent, current, props.extensionLookbackDays());
             if (extension != null && extension >= props.maxExtensionPct() && !catalystAllowed) {
-                continue; // 최근 저점 대비 이미 과하게 올라온 자리 — 실적직결 촉매 없으면 보류
+                verdicts.add(ScanVerdict.of(c, "EXTENDED", String.format(
+                        "%d일 저점 대비 +%.2f%% ≥ 임계 %.1f%% · 촉매면제 없음(#859)",
+                        props.extensionLookbackDays(), extension, props.maxExtensionPct())));
+                continue;
             }
             if (!cheap && !catalystAllowed) {
-                continue; // 이미 싼 것도 아니고, 자본배분(재평가) 촉매도 없음 — 원칙 §2/§3-7 둘 다 미달
+                verdicts.add(ScanVerdict.of(c, "VALUATION", "저평가 아님(PER"
+                        + (valuation == null ? "N/A" : valuation.per()) + "/PBR"
+                        + (valuation == null ? "N/A" : valuation.pbr()) + ", 상한 PER"
+                        + props.maxPer() + "/PBR" + props.maxPbr()
+                        + ") · 자본배분 촉매도 없음(원칙 §2/§3-7)"));
+                continue;
             }
             FundamentalScore score = fundamentalScore(c, recent);
             if (!score.passes(props.minFundamentalPass())) {
-                continue; // 원칙 §3 체크리스트(실적/재무/자본배분/시장성/상대강도) "대부분 YES" 미달
+                verdicts.add(ScanVerdict.of(c, "FUNDAMENTAL",
+                        "원칙 §3 체크리스트 " + score.passCount() + "/5 < 기준 "
+                                + props.minFundamentalPass() + " · " + score.describe()));
+                continue;
             }
             String rationale = buyRationale(c, recent, valuation, cheap, rerateCatalyst, score);
             if (orderExecutor.buy(c.getSymbol(), c.getMarket(), props.perSymbolBudget(), current, rationale)) {
                 filled++;
+                verdicts.add(ScanVerdict.of(c, "BUY", rationale));
                 notifyMacroContext(c); // 매수 게이트에는 안 넣음 — 참고용 거시 맥락만 별도 안내(2026-09-29)
+            } else {
+                verdicts.add(ScanVerdict.of(c, "ORDER_FAILED", "주문 실패 — 주문로그 참조"));
             }
         }
+        publishScan(verdicts, openSlots);
     }
 
     /**

@@ -21,4 +21,18 @@ public record FundamentalScore(boolean earningsQuality, boolean balanceSheet,
     public boolean passes(int minPass) {
         return passCount() >= minPass;
     }
+
+    /**
+     * 항목별 통과 여부를 사람이 읽을 형태로(#884 탈락 사유 계측용).
+     * 예) {@code 실적X재무O배당O유동O강도X} — BuyRationale 과 같은 표기를 쓴다.
+     */
+    public String describe() {
+        return "실적" + ox(earningsQuality) + "재무" + ox(balanceSheet)
+                + "배당" + ox(capitalReturn) + "유동" + ox(liquidity)
+                + "강도" + ox(relativeStrength);
+    }
+
+    private static String ox(boolean b) {
+        return b ? "O" : "X";
+    }
 }

@@ -141,6 +141,11 @@ public class AutoTradeController {
         result.put("holdingsView", holdingsView(holdings, nameBySymbol));
         result.put("symbolNames", nameBySymbol);
         result.put("summary", summary());
+        // #884 최신 틱의 매수 스캔 판정 — "왜 안 샀나"를 추측 없이 답하기 위한 계측.
+        Map<String, Object> scan = new HashMap<>();
+        scan.put("at", scheduler.lastScanAt());
+        scan.put("verdicts", scheduler.lastScan());
+        result.put("scan", scan);
         return result;
     }
 

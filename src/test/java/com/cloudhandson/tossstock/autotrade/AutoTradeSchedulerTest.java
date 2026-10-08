@@ -750,4 +750,104 @@ class AutoTradeSchedulerTest {
 
         verify(dailyMapper, org.mockito.Mockito.never()).breadth(eq("KR"), anyInt());
     }
+
+    // ---- #884 매수 스캔 탈락 사유 계측 ----
+
+    private static java.util.Optional<ScanVerdict> stageOf(java.util.List<ScanVerdict> vs, String symbol) {
+        return vs.stream().filter(v -> symbol.equals(v.symbol())).findFirst();
+    }
+
+    @Test
+    void 인기_미달로_탈락하면_사유가_기록된다() {
+        // 인수조건 1 — 이전에는 이 탈락이 완전히 무기록이었다.
+        AutoTradeCandidate c = new AutoTradeCandidate();
+        c.setSymbol(SYMBOL);
+        c.setMarket("KR");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(candidateMapper.findActive()).thenReturn(List.of(c));
+        // breadth 54%(2000/3699) — 레짐 게이트를 통과시켜 인기 게이트까지 보낸다.
+        // (처음엔 60/3699=1.6% 로 써서 REGIME 에서 막혔다 — 계측이 그 실수를 잡아줬다)
+        when(dailyMapper.breadth(eq("KR"), anyInt())).thenReturn(Map.of("UP", 2000L, "TOTAL", 3699L));
+        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(List.of());
+
+        scheduler.tick();
+
+        assertThat(stageOf(scheduler.lastScan(), SYMBOL)).isPresent();
+        assertThat(stageOf(scheduler.lastScan(), SYMBOL).get().stage()).isEqualTo("POPULARITY");
+        assertThat(scheduler.lastScanAt()).isNotNull();
+    }
+
+    @Test
+    void 장_마감이면_사유가_기록된다() {
+        marketHours.when(() -> MarketHours.isOpen(anyString(), any(LocalDateTime.class))).thenReturn(false);
+        AutoTradeCandidate c = new AutoTradeCandidate();
+        c.setSymbol("TSM");
+        c.setMarket("US");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(candidateMapper.findActive()).thenReturn(List.of(c));
+
+        scheduler.tick();
+
+        assertThat(stageOf(scheduler.lastScan(), "TSM").get().stage()).isEqualTo("MARKET_CLOSED");
+    }
+
+    @Test
+    void 매수_성공도_기록된다() {
+        // 인수조건 2 — "왜 샀나"도 같은 자리에서 보여야 한다.
+        usCandidate();
+        spySignal(0.5, 1.0);
+        when(orderExecutor.buy(any(), any(), any(), any(), anyString())).thenReturn(true);
+
+        scheduler.tick();
+
+        ScanVerdict v = stageOf(scheduler.lastScan(), "TSM").orElseThrow();
+        assertThat(v.stage()).isEqualTo("BUY");
+        assertThat(v.detail()).contains("PER");
+    }
+
+    @Test
+    void 슬롯이_없으면_tick_사유가_기록된다() {
+        // 인수조건 3 — scanCandidates 에 도달조차 못하는 경우가 "왜 안 샀나"의 답인 때가 많다.
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(5);   // max-symbols=5
+
+        scheduler.tick();
+
+        assertThat(scheduler.lastScan()).hasSize(1);
+        assertThat(scheduler.lastScan().get(0).stage()).isEqualTo("NO_SLOT");
+        assertThat(scheduler.lastScan().get(0).symbol()).isNull();
+        verify(candidateMapper, org.mockito.Mockito.never()).findActive();
+    }
+
+    @Test
+    void 후보가_없으면_사유가_기록된다() {
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(candidateMapper.findActive()).thenReturn(List.of());
+
+        scheduler.tick();
+
+        assertThat(scheduler.lastScan()).hasSize(1);
+        assertThat(scheduler.lastScan().get(0).stage()).isEqualTo("NO_CANDIDATE");
+    }
+
+    @Test
+    void 스냅샷은_틱마다_교체된다() {
+        // 인수조건 4 — 누적하면 메모리가 무한히 자란다.
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(candidateMapper.findActive()).thenReturn(List.of());
+
+        scheduler.tick();
+        scheduler.tick();
+
+        assertThat(scheduler.lastScan()).hasSize(1);   // 2건으로 늘지 않는다
+    }
 }
