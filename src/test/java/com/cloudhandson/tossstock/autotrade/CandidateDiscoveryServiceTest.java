@@ -1,11 +1,7 @@
 package com.cloudhandson.tossstock.autotrade;
 
-import com.cloudhandson.tossstock.market.DailyCollector;
-import com.cloudhandson.tossstock.market.DailyOhlcv;
 import com.cloudhandson.tossstock.market.DailyOhlcvMapper;
-import com.cloudhandson.tossstock.market.UniverseMapper;
 import com.cloudhandson.tossstock.news.StockNews;
-import com.cloudhandson.tossstock.news.StockNewsMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -13,198 +9,78 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
- * CandidateDiscoveryService 검증 — 후보 자동등록/자동해제(#808 2026-09-29) +
- * 뉴스-독립 후보 유지(#828 2026-10-05, 설계 docs/design/828-news-independent-retention).
+ * #887 스크리너 기반 후보 동기화. 설계: docs/design/887-news-exclusion-filter/fn-refresh.md §10
+ *
+ * <p>#887 이전 이 파일에는 뉴스 발굴(등급·촉매자격·제목가드·뉴스소멸) 테스트 30여 개가 있었다.
+ * 그 경로를 제거했으므로 함께 지웠다 — 대상 코드가 없는 테스트는 회귀를 지키지 못한다.
+ * 촉매 자격 판정 자체의 테스트는 {@code CatalystQualifierTest}·{@code TitleGuardTest} 에
+ * 그대로 남아 있다(설계 §13-2: 클래스는 남기고 진입 경로에서만 뺐다).
  */
 class CandidateDiscoveryServiceTest {
 
-    private StockNewsMapper newsMapper;
+    private static final String KR_INDEX = "069500";
+
+    private com.cloudhandson.tossstock.news.StockNewsMapper newsMapper;
     private AutoTradeCandidateMapper candidateMapper;
-    private UniverseMapper universeMapper;
-    private NewsFadeDetector newsFadeDetector;
-    private DailyCollector dailyCollector;
-    private ValuationClient valuationClient;
+    private NewsRiskExclusion newsRiskExclusion;
     private DailyOhlcvMapper dailyMapper;
     private AutoTradePositionMapper positionMapper;
     private CandidateDiscoveryService service;
 
     @BeforeEach
     void setUp() {
-        newsMapper = mock(StockNewsMapper.class);
+        newsMapper = mock(com.cloudhandson.tossstock.news.StockNewsMapper.class);
         candidateMapper = mock(AutoTradeCandidateMapper.class);
-        universeMapper = mock(UniverseMapper.class);
-        newsFadeDetector = mock(NewsFadeDetector.class);
-        dailyCollector = mock(DailyCollector.class);
-        valuationClient = mock(ValuationClient.class);
+        newsRiskExclusion = mock(NewsRiskExclusion.class);
         dailyMapper = mock(DailyOhlcvMapper.class);
         positionMapper = mock(AutoTradePositionMapper.class);
         AutoTradeProperties props = new AutoTradeProperties(true, BigDecimal.valueOf(3_000_000), 5,
                 BigDecimal.valueOf(600_000), 15.0, 10.0, 10.0, "", "0 * * * * *", 20, 1.0, 1.5, 30.0, 3.0, 200.0,
-                BigDecimal.valueOf(300_000_000), BigDecimal.valueOf(200_000), 20, 2, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(20, 100, 2.5, 20, 0.2));
-        service = new CandidateDiscoveryService(newsMapper, candidateMapper, universeMapper, newsFadeDetector,
-                dailyCollector, props, valuationClient, dailyMapper, positionMapper);
+                BigDecimal.valueOf(300_000_000), BigDecimal.valueOf(200_000), 20, 2, 30, 60, 30,
+                6.0, 5, 15.0, 40, "KR", 7, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON",
+                new AutoTradeProperties.Gate(20, 100, 2.5, 20, 0.2));
+        service = new CandidateDiscoveryService(newsMapper, candidateMapper, newsRiskExclusion,
+                props, dailyMapper, positionMapper);
         when(candidateMapper.findActive()).thenReturn(List.of());
+        when(newsRiskExclusion.excludedSymbols(any())).thenReturn(Set.of());
     }
 
-    /** #865 촉매 자격을 충족하는 facts — 등급 외 조건은 통과시키고 등급 로직만 보는 용도. */
-    private static final String QUALIFIED_FACTS = """
-            {"confirmed":true,"isTransaction":true,"materialAmount":true,
-             "priceAlreadyMoved":false,"beneficiary":"SELLER","riskFlag":"NONE"}""";
+    // ---- 스냅샷 입력 헬퍼 ----
 
-    private static StockNews news(String targets, String sentiment, String title) {
-        StockNews n = news(targets, sentiment, title, QUALIFIED_FACTS);
-        return n;
+    /** 지수(069500) + 주어진 종목들. 지수는 20일 +0% 로 둬서 상대강세 판정의 기준을 0 으로 만든다. */
+    private void givenSnapshot(ScreeningRow... rows) {
+        java.util.List<ScreeningRow> all = new java.util.ArrayList<>();
+        all.add(row(KR_INDEX, "1000", "1000", "999999999999", "1000"));
+        all.addAll(List.of(rows));
+        when(dailyMapper.screeningSnapshot(any(LocalDate.class), anyInt())).thenReturn(all);
     }
 
-    private static StockNews news(String targets, String sentiment, String title, String facts) {
-        StockNews n = new StockNews();
-        n.setTargets(targets);
-        n.setSentiment(sentiment);
-        n.setTitle(title);
-        n.setFacts(facts);
-        return n;
+    /** 통과 기준선: 유동성 충분(10억), 상대강세 +5%, 급등률 +1%. */
+    private static ScreeningRow passing(String symbol) {
+        return row(symbol, "101", "100", "1000000000", "100");
     }
 
-    @Test
-    void kr_symbol_with_strong_sentiment_is_registered() {
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150,전자부품", "009150:S5,전자부품:S4", "삼성전기 기판 증설")));
-        when(candidateMapper.existsActive("009150")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper).insert(argThat(c -> c.getSymbol().equals("009150") && c.getMarket().equals("KR")));
+    private static ScreeningRow row(String symbol, String latest, String before20,
+                                     String turnover, String lowRecent) {
+        return new ScreeningRow(symbol, "KR", new BigDecimal(latest), new BigDecimal(before20),
+                new BigDecimal(turnover), new BigDecimal(lowRecent), 60);
     }
 
-    @Test
-    void kr_symbol_registration_does_not_trigger_backfill() {
-        // KR은 DailyCollector 정기 전종목 스캔이 이미 커버 — 후보 등록 때 중복 백필 불필요.
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150,전자부품", "009150:S5,전자부품:S4", "삼성전기 기판 증설")));
-        when(candidateMapper.existsActive("009150")).thenReturn(false);
-
-        service.refresh();
-
-        verify(dailyCollector, never()).backfillSymbol(anyString(), any());
-    }
-
-    @Test
-    void us_ticker_verified_against_universe_is_registered() {
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("NVDA,반도체", "NVDA:S5,반도체:S4", "엔비디아 자사주 매입")));
-        when(candidateMapper.existsActive("NVDA")).thenReturn(false);
-        when(universeMapper.existsUsSymbol("NVDA")).thenReturn(true);
-
-        service.refresh();
-
-        verify(candidateMapper).insert(argThat(c -> c.getSymbol().equals("NVDA") && c.getMarket().equals("US")));
-    }
-
-    @Test
-    void us_ticker_registration_triggers_backfill() {
-        // 2026-09-30 버그 수정: 신규 US 후보는 daily_ohlcv가 없으면 인기/상대강도 판정이
-        // 영원히 false가 되던 문제 — 등록 시 백필을 트리거해야 함.
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("MSFT,IT", "MSFT:S5,IT:S4", "Microsoft 28년 만의 최대 분기 상승")));
-        when(candidateMapper.existsActive("MSFT")).thenReturn(false);
-        when(universeMapper.existsUsSymbol("MSFT")).thenReturn(true);
-
-        service.refresh();
-
-        verify(dailyCollector).backfillSymbol("MSFT", null);
-    }
-
-    @Test
-    void sector_only_target_not_registered() {
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("반도체", "반도체:S4", "반도체 업황 개선")));
-
-        service.refresh();
-
-        verify(candidateMapper, never()).insert(any());
-    }
-
-    @Test
-    void weak_sentiment_below_s4_not_registered() {
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150", "009150:S3", "삼성전기 단순 공시")));
-
-        service.refresh();
-
-        verify(candidateMapper, never()).insert(any());
-    }
-
-    // ---- #865 촉매 자격 게이트 ----
-
-    @Test
-    void facts_없는_기사는_s5라도_등록되지_않는다() {
-        // fail-closed — LLM 추출 실패·구버전 행은 매수 근거가 없다(인수조건 5).
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150", "009150:S5", "삼성전기 뉴스", null)));
-        when(candidateMapper.existsActive("009150")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper, never()).insert(any());
-    }
-
-    @Test
-    void 규모_미제시_기사는_등록되지_않는다() {
-        // "금액 미공개 MOU" 류 — 원칙 §3-1 '구체 촉매'가 아니다.
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150", "009150:S4", "삼성전기, 업무협약 체결",
-                        """
-                        {"confirmed":true,"isTransaction":true,"materialAmount":false,
-                         "priceAlreadyMoved":false,"beneficiary":"SELLER","riskFlag":"NONE"}""")));
-        when(candidateMapper.existsActive("009150")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper, never()).insert(any());
-    }
-
-    @Test
-    void 리스크_이벤트는_호재와_함께여도_등록되지_않는다() {
-        // 인수조건 2 — 유상증자가 섞이면 긍정 사실로 상쇄하지 않는다(원칙 §3-3).
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150", "009150:S5", "삼성전기, 대규모 수주와 함께 유상증자 결정",
-                        """
-                        {"confirmed":true,"isTransaction":true,"materialAmount":true,
-                         "recurring":true,"secularDemand":true,"exportGlobal":true,
-                         "priceAlreadyMoved":false,"beneficiary":"SELLER","riskFlag":"DILUTION"}""")));
-        when(candidateMapper.existsActive("009150")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper, never()).insert(any());
-    }
-
-    @Test
-    void 선반영_사후보도_기사는_등록되지_않는다() {
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150", "009150:S5", "[특징주] 삼성전기 급등",
-                        """
-                        {"confirmed":true,"isTransaction":false,"materialAmount":true,
-                         "priceAlreadyMoved":true,"beneficiary":"NEITHER","riskFlag":"NONE"}""")));
-        when(candidateMapper.existsActive("009150")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper, never()).insert(any());
-    }
-
-    // ---- #869 구 게이트 후보 재심사 ----
-
-    private static AutoTradeCandidate candidate(String symbol, String note) {
+    private static AutoTradeCandidate active(String symbol, String note) {
         AutoTradeCandidate c = new AutoTradeCandidate();
         c.setSymbol(symbol);
         c.setMarket("KR");
@@ -212,251 +88,92 @@ class CandidateDiscoveryServiceTest {
         return c;
     }
 
-    @Test
-    void 구게이트_등록_후보는_재심사로_해제된다() {
-        // 통과율 37% 시절 들어온 후보 — 노트에 촉매점수가 없다.
-        when(candidateMapper.findActive()).thenReturn(List.of(
-                candidate("145170", "자동발견(2026-10-07T09:00:15.300134): 노브랜드 버거, 대학가 매장 확대")));
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
-
-        service.refresh();
-
-        verify(candidateMapper).deactivate("145170");
-    }
+    // ---- AC1: 뉴스만으로는 등록되지 않는다 ----
 
     @Test
-    void 새_게이트로_등록된_정상_후보는_유지된다() {
-        when(candidateMapper.findActive()).thenReturn(List.of(
-                candidate("267260", "자동발견(2026-10-08T17:15:01, 촉매점수 3/4): "
-                        + "HD건설기계, 美 데이터센터 발전엔진 '롱블록' 수주…3900억 규모")));
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
-        when(newsFadeDetector.hasNewsFaded("267260")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper, never()).deactivate("267260");
-    }
-
-    @Test
-    void 새_게이트로_등록됐어도_제목이_가드에_걸리면_해제된다() {
-        // 인수조건 8 — 1차 배포에서 443060 만 남은 누락. 노트에 촉매점수가 있어 '새 기준
-        // 등록'으로 분류됐지만 그게 바로 가드가 잡으려던 인수 결함 그 자체였다.
-        when(candidateMapper.findActive()).thenReturn(List.of(
-                candidate("443060", "자동발견(2026-10-08T17:15:01.516288, 촉매점수 3/4): "
-                        + "HD현대마린솔루션, 美 엔진 기업 '골텐스' 3315억원에 인수")));
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
-
-        service.refresh();
-
-        verify(candidateMapper).deactivate("443060");
-    }
-
-    @Test
-    void 해제사유_판정_순서() {
-        assertThat(CandidateDiscoveryService.disqualifyReason("수동 등록: 장기 관찰")).isNull();
-        assertThat(CandidateDiscoveryService.disqualifyReason("자동발견(t): 아무 제목"))
-                .isEqualTo("구 게이트 등록분");
-        assertThat(CandidateDiscoveryService.disqualifyReason(
-                "자동발견(t, 촉매점수 2/4): A사, 2조 적자")).isEqualTo("제목판정 LOSS");
-        assertThat(CandidateDiscoveryService.disqualifyReason(
-                "자동발견(t, 촉매점수 2/4): A사, B사 3315억원에 인수")).isEqualTo("제목판정 BUYER");
-        assertThat(CandidateDiscoveryService.disqualifyReason(
-                "자동발견(t, 촉매점수 2/4): A사, 3900억 규모 수주")).isNull();
-        assertThat(CandidateDiscoveryService.disqualifyReason(null)).isNull();
-    }
-
-    @Test
-    void 노트에서_제목만_떼어낸다() {
-        assertThat(CandidateDiscoveryService.titleOf("자동발견(t, 촉매점수 3/4): 제목 부분"))
-                .isEqualTo("제목 부분");
-        // 형식이 다르면 노트 전체를 제목으로 본다(가드가 과차단 쪽으로 기운다).
-        assertThat(CandidateDiscoveryService.titleOf("형식이 다른 노트")).isEqualTo("형식이 다른 노트");
-    }
-
-    @Test
-    void 수동_등록_후보는_재심사로_해제되지_않는다() {
-        // 인수조건 7 — 사람이 넣은 것은 자동 판정으로 뺄 권한이 없다.
-        when(candidateMapper.findActive()).thenReturn(List.of(
-                candidate("005930", "수동 등록: 장기 관찰")));
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
-        when(newsFadeDetector.hasNewsFaded("005930")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper, never()).deactivate("005930");
-    }
-
-    // ---- #878 중복제거는 자격판정 뒤에 ----
-
-    /** 자격 미달(규모 미제시) facts. */
-    private static final String UNQUALIFIED_FACTS = """
-            {"confirmed":true,"isTransaction":true,"materialAmount":false,
-             "priceAlreadyMoved":false,"beneficiary":"SELLER","riskFlag":"NONE"}""";
-
-    @Test
-    void 탈락기사가_먼저_와도_통과기사로_등록된다() {
-        // 인수조건 1·2 — 이 버그의 핵심. 라이브에서 TSM 이 통과 기사 2건을 갖고도
-        // 탈락 기사가 먼저 처리돼 등록되지 않았다.
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150", "009150:S4", "삼성전기, 업무협약 체결", UNQUALIFIED_FACTS),
-                news("009150", "009150:S5", "삼성전기, 3900억 규모 기판 공급계약")));
-        when(candidateMapper.existsActive("009150")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper).insert(argThat(c -> c.getSymbol().equals("009150")
-                && c.getValuationNote().contains("3900억 규모 기판 공급계약")));
-    }
-
-    @Test
-    void 통과기사가_여러건이어도_한번만_등록된다() {
-        // 인수조건 5
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150", "009150:S5", "삼성전기, 3900억 규모 기판 공급계약"),
-                news("009150", "009150:S5", "삼성전기, 2000억 규모 추가 수주")));
-        when(candidateMapper.existsActive("009150")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper, times(1)).insert(any());
-    }
-
-    @Test
-    void 이미_활성인_종목은_existsActive를_한번만_조회한다() {
-        // 인수조건 4 — 회차 내 불변 조건이므로 seen 을 소비해야 한다.
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150", "009150:S5", "삼성전기, 3900억 수주"),
-                news("009150", "009150:S5", "삼성전기, 2000억 수주"),
-                news("009150", "009150:S5", "삼성전기, 1000억 수주")));
-        when(candidateMapper.existsActive("009150")).thenReturn(true);
+    void 뉴스는_후보_등록에_관여하지_않는다() {
+        // AC1 — 스냅샷이 통과 종목을 주지 않으면, 뉴스가 아무리 있어도 등록은 0건이다.
+        // 뉴스 조회 자체가 발굴 경로에 없음을 고정한다(테마 판정은 별 경로).
+        givenSnapshot();   // 지수만 — 통과 종목 없음
 
         service.refresh();
 
         verify(candidateMapper, never()).insert(any());
-        verify(candidateMapper, times(1)).existsActive("009150");
+        verify(newsMapper, never()).findRecentEvents(any());
     }
 
     @Test
-    void 섹터명_타겟은_반복_평가되지_않는다() {
-        // 인수조건 3 — facts 가 null 이어도(자격 판정 전에 걸러지므로) 예외 없이 지나가야 한다.
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("반도체", "반도체:S5", "반도체 업황 개선", null),
-                news("반도체", "반도체:S5", "반도체 수출 증가", null)));
+    void 스크리너_통과분이_등록된다() {
+        givenSnapshot(passing("005930"));
+
+        service.refresh();
+
+        org.mockito.ArgumentCaptor<AutoTradeCandidate> cap =
+                org.mockito.ArgumentCaptor.forClass(AutoTradeCandidate.class);
+        verify(candidateMapper).insert(cap.capture());
+        assertThat(cap.getValue().getSymbol()).isEqualTo("005930");
+        assertThat(cap.getValue().getMarket()).isEqualTo("KR");
+        assertThat(cap.getValue().getValuationNote()).startsWith(UniverseScreener.NOTE_PREFIX);
+    }
+
+    // ---- AC2: 리스크 이벤트 배제 ----
+
+    @Test
+    void 리스크_기사가_있는_종목은_등록되지_않는다() {
+        givenSnapshot(passing("005930"));
+        when(newsRiskExclusion.excludedSymbols(any())).thenReturn(Set.of("005930"));
 
         service.refresh();
 
         verify(candidateMapper, never()).insert(any());
     }
 
+    // ---- AC4: 등록 상한 ----
+
     @Test
-    void 유상증자로_등록된_후보는_재심사로_해제된다() {
-        // #877 확장이 재심사에도 반영돼야 한다.
-        when(candidateMapper.findActive()).thenReturn(List.of(
-                candidate("317530", "자동발견(2026-10-08T17:00, 촉매점수 2/4): "
-                        + "에피소드컴퍼니, 140억원 제3자배정 유상증자")));
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
+    void 등록은_screen_top_n_이하로_묶인다() {
+        ScreeningRow[] rows = new ScreeningRow[50];
+        for (int i = 0; i < 50; i++) {
+            // 거래대금을 달리 줘서 정렬이 결정론적이게 한다.
+            rows[i] = row(String.format("%06d", i), "101", "100", String.valueOf(1_000_000_000L + i), "100");
+        }
+        givenSnapshot(rows);
 
         service.refresh();
 
-        verify(candidateMapper).deactivate("317530");
+        verify(candidateMapper, org.mockito.Mockito.times(40)).insert(any());
     }
 
+    // ---- AC9 / AC10: 비활성화 대상 ----
+
     @Test
-    void 촉매점수가_노트에_기록된다() {
-        // 인수조건 3 — 판정 근거의 설명 가능성.
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150", "009150:S5", "삼성전기, 3900억 장기 수출 공급계약",
-                        """
-                        {"confirmed":true,"isTransaction":true,"materialAmount":true,
-                         "recurring":true,"secularDemand":true,"exportGlobal":true,
-                         "shareholderReturn":true,
-                         "priceAlreadyMoved":false,"beneficiary":"SELLER","riskFlag":"NONE"}""")));
-        when(candidateMapper.existsActive("009150")).thenReturn(false);
+    void 구_뉴스발굴_후보는_전부_해제된다() {
+        // AC9 — 2026-09-29~10-09 사이 "자동발견(" 노트로 들어온 후보. 1사이클에 전부 비활성화.
+        givenSnapshot();
+        when(candidateMapper.findActive())
+                .thenReturn(List.of(active("259630", "자동발견(2026-10-08T21:58, 촉매점수 1/4): 어떤 제목")));
 
         service.refresh();
 
-        verify(candidateMapper).insert(argThat(c -> c.getValuationNote().contains("촉매점수 4/4")));
+        verify(candidateMapper).deactivate("259630");
     }
 
     @Test
-    void already_active_symbol_not_duplicated() {
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("009150", "009150:S5", "삼성전기 추가 뉴스")));
-        when(candidateMapper.existsActive("009150")).thenReturn(true);
+    void 스크리너_이탈분은_해제된다() {
+        givenSnapshot(passing("005930"));
+        when(candidateMapper.findActive())
+                .thenReturn(List.of(active("000660", UniverseScreener.NOTE_PREFIX + "2026-10-08, ...)")));
 
         service.refresh();
 
-        verify(candidateMapper, never()).insert(any());
+        verify(candidateMapper).deactivate("000660");
     }
 
     @Test
-    void unverified_uppercase_token_not_registered() {
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of(
-                news("ABCDE", "ABCDE:S5", "알 수 없는 토큰")));
-        when(universeMapper.existsUsSymbol("ABCDE")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper, never()).insert(any());
-    }
-
-    @Test
-    void faded_candidate_is_deactivated() {
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
-        AutoTradeCandidate existing = new AutoTradeCandidate();
-        existing.setSymbol("195870");
-        when(candidateMapper.findActive()).thenReturn(List.of(existing));
-        when(newsFadeDetector.hasNewsFaded("195870")).thenReturn(true);
-
-        service.refresh();
-
-        verify(candidateMapper).deactivate("195870");
-    }
-
-    // ── #828 뉴스-독립 후보 유지 ──────────────────────────────────────────────
-    // 실사례(2026-10-05): SMCI — PER 13.40/PBR 2.80로 저평가, 9/14 종가 36.74 → 10/1 종가 41.15
-    // (+12%)로 지수 대비 상대강세였는데 "Vera Rubin NVL72 출하" 뉴스 TTL이 끝나자 자동해제됨.
-    private static final BigDecimal SMCI_PER = BigDecimal.valueOf(13.40);
-    private static final BigDecimal SMCI_PBR = BigDecimal.valueOf(2.80);
-
-    private AutoTradeCandidate fadedCandidate(String symbol, String market, LocalDateTime createdAt) {
-        AutoTradeCandidate c = new AutoTradeCandidate();
-        c.setSymbol(symbol);
-        c.setMarket(market);
-        c.setCreatedAt(createdAt);
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
-        when(candidateMapper.findActive()).thenReturn(List.of(c));
-        when(newsFadeDetector.hasNewsFaded(symbol)).thenReturn(true);
-        return c;
-    }
-
-    private static DailyOhlcv day(LocalDate date, double close) {
-        DailyOhlcv o = new DailyOhlcv();
-        o.setTradeDate(date);
-        o.setCloseP(BigDecimal.valueOf(close));
-        return o;
-    }
-
-    /** 9/14 → 10/1 종가 2건(상대강도 계산은 첫날/마지막날 종가만 사용). */
-    private static List<DailyOhlcv> window(double firstClose, double lastClose) {
-        return List.of(day(LocalDate.of(2026, 9, 14), firstClose), day(LocalDate.of(2026, 10, 1), lastClose));
-    }
-
-    /**
-     * 2026-10-05 QA: Toss 캔들 API가 US ETF(SPY)를 지원 안 해(실측: SPY/QQQ/VOO/IVV/DIA 전부
-     * 0건) 지수 수익률을 {@code ValuationClient#getIndexReturnPct}(야후 차트 API)로 대체—
-     * US는 이걸로 스텁, KR(069500)은 여전히 {@code dailyMapper} 경로.
-     */
-    private void givenPriceWindows(String symbol, List<DailyOhlcv> stock, Double spyReturnPct) {
-        when(dailyMapper.recentForSymbols(eq(List.of(symbol)), any())).thenReturn(stock);
-        when(valuationClient.getIndexReturnPct(eq("SPY"), anyInt())).thenReturn(spyReturnPct);
-    }
-
-    @Test
-    void faded_but_cheap_and_relatively_strong_candidate_is_retained() {
-        fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", window(36.74, 41.15), 2.0); // +12.0% vs SPY +2.0%
-        when(valuationClient.getValuation("SMCI", "US")).thenReturn(new Valuation(SMCI_PER, SMCI_PBR));
+    void 스크리너_유지분은_해제되지_않는다() {
+        givenSnapshot(passing("005930"));
+        when(candidateMapper.findActive())
+                .thenReturn(List.of(active("005930", UniverseScreener.NOTE_PREFIX + "2026-10-08, ...)")));
 
         service.refresh();
 
@@ -464,75 +181,110 @@ class CandidateDiscoveryServiceTest {
     }
 
     @Test
-    void faded_and_cheap_but_not_relatively_strong_is_deactivated() {
-        fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", window(41.15, 36.74), 2.0); // -10.7% vs SPY +2.0%
-        when(valuationClient.getValuation("SMCI", "US")).thenReturn(new Valuation(SMCI_PER, SMCI_PBR));
+    void 수동_등록_후보는_해제되지_않는다() {
+        // AC10 — 사람이 넣은 것을 자동 판정으로 뺄 권한이 없다.
+        givenSnapshot();
+        when(candidateMapper.findActive())
+                .thenReturn(List.of(active("009150", "수동 등록: 장기 관찰")));
 
         service.refresh();
 
-        verify(candidateMapper).deactivate("SMCI");
+        verify(candidateMapper, never()).deactivate(anyString());
     }
 
     @Test
-    void faded_and_relatively_strong_but_expensive_is_deactivated() {
-        fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", window(36.74, 41.15), 2.0);
-        when(valuationClient.getValuation("SMCI", "US"))
-                .thenReturn(new Valuation(BigDecimal.valueOf(45.0), BigDecimal.valueOf(8.0))); // max-per/pbr 초과
+    void 수동_등록분은_스크리너가_통과시켜도_중복_등록되지_않는다() {
+        givenSnapshot(passing("005930"));
+        when(candidateMapper.existsActive("005930")).thenReturn(true);
 
         service.refresh();
 
-        verify(candidateMapper).deactivate("SMCI");
+        verify(candidateMapper, never()).insert(any());
+    }
+
+    // ---- 실패 모드: 조회 장애를 이탈로 오인하지 않는다 ----
+
+    @Test
+    void 스냅샷이_0건이면_기존_후보를_해제하지_않는다() {
+        when(dailyMapper.screeningSnapshot(any(LocalDate.class), anyInt())).thenReturn(List.of());
+        when(candidateMapper.findActive())
+                .thenReturn(List.of(active("259630", "자동발견(t): 제목")));
+
+        service.refresh();
+
+        verify(candidateMapper, never()).deactivate(anyString());
+        verify(candidateMapper, never()).insert(any());
     }
 
     @Test
-    void faded_candidate_beyond_max_retention_days_is_deactivated_even_if_cheap_and_strong() {
-        fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(40)); // 상한 30일 초과
-        givenPriceWindows("SMCI", window(36.74, 41.15), 2.0);
-        when(valuationClient.getValuation("SMCI", "US")).thenReturn(new Valuation(SMCI_PER, SMCI_PBR));
+    void 배제목록_조회가_실패하면_사이클을_포기한다() {
+        // fail-closed — 배제 목록을 모르는 채로 등록하면 유상증자 공시 종목을 살 수 있다.
+        givenSnapshot(passing("005930"));
+        doThrow(new RuntimeException("DB 장애")).when(newsRiskExclusion).excludedSymbols(any());
 
         service.refresh();
 
-        verify(candidateMapper).deactivate("SMCI");
+        verify(candidateMapper, never()).insert(any());
+        verify(candidateMapper, never()).deactivate(anyString());
     }
 
     @Test
-    void valuation_lookup_failure_deactivates_faded_candidate() {
-        // fail-closed(설계 §9) — 외부 API 실패로 판정 불가면 유지하지 않는다.
-        fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", window(36.74, 41.15), 2.0);
-        when(valuationClient.getValuation("SMCI", "US")).thenReturn(null);
+    void 지수_바가_없으면_등록이_0건이다() {
+        // 상대강세 판정 불가 → 그 시장 전체 탈락(fail-closed). 스냅샷 장애와 달리
+        // 비활성화는 정상 진행된다("판정 불가"와 "조회 장애"를 구분한다).
+        when(dailyMapper.screeningSnapshot(any(LocalDate.class), anyInt()))
+                .thenReturn(List.of(passing("005930")));   // 지수(069500) 없음
 
         service.refresh();
 
-        verify(candidateMapper).deactivate("SMCI");
+        verify(candidateMapper, never()).insert(any());
     }
 
     @Test
-    void missing_price_history_deactivates_faded_candidate() {
-        // 일봉이 부족해 상대강도 판정 자체가 불가 → fail-closed(설계 §9).
-        fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", List.of(), 2.0);
-        when(valuationClient.getValuation("SMCI", "US")).thenReturn(new Valuation(SMCI_PER, SMCI_PBR));
+    void 개별_등록_실패는_다음_종목을_막지_않는다() {
+        givenSnapshot(row("005930", "101", "100", "2000000000", "100"),
+                row("000660", "101", "100", "1000000000", "100"));
+        doThrow(new RuntimeException("ORA-00001")).when(candidateMapper)
+                .insert(org.mockito.ArgumentMatchers.argThat(c -> "005930".equals(c.getSymbol())));
 
         service.refresh();
 
-        verify(candidateMapper).deactivate("SMCI");
+        verify(candidateMapper).insert(
+                org.mockito.ArgumentMatchers.argThat(c -> "000660".equals(c.getSymbol())));
+    }
+
+    // ---- 순수 헬퍼 ----
+
+    @Test
+    void 노트_접두사로_자동_수동을_구분한다() {
+        assertThat(CandidateDiscoveryService.isLegacyNewsNote("자동발견(t): 제목")).isTrue();
+        assertThat(CandidateDiscoveryService.isLegacyNewsNote("스크리너(2026-10-09, ...)")).isFalse();
+        assertThat(CandidateDiscoveryService.isLegacyNewsNote(null)).isFalse();
+        assertThat(CandidateDiscoveryService.isScreenerNote("스크리너(2026-10-09, ...)")).isTrue();
+        assertThat(CandidateDiscoveryService.isScreenerNote("수동 등록: 장기 관찰")).isFalse();
+        assertThat(CandidateDiscoveryService.isScreenerNote(null)).isFalse();
     }
 
     @Test
-    void index_return_fetch_failure_deactivates_faded_candidate() {
-        // 2026-10-05 신규: 야후 차트 API 실패(null) → fail-closed(설계 §9), 기존 SPY 데이터
-        // 부재 문제의 대체 경로 자체가 또 실패하는 경우도 안전하게 처리되는지 확인.
-        fadedCandidate("SMCI", "US", LocalDateTime.now().minusDays(10));
-        givenPriceWindows("SMCI", window(36.74, 41.15), null);
-        when(valuationClient.getValuation("SMCI", "US")).thenReturn(new Valuation(SMCI_PER, SMCI_PBR));
-
-        service.refresh();
-
-        verify(candidateMapper).deactivate("SMCI");
+    void 시장_CSV를_집합으로_바꾼다() {
+        assertThat(CandidateDiscoveryService.marketSet("KR")).containsExactly("KR");
+        assertThat(CandidateDiscoveryService.marketSet(" kr , us ")).containsExactlyInAnyOrder("KR", "US");
+        assertThat(CandidateDiscoveryService.marketSet("")).isEmpty();     // 킬스위치
+        assertThat(CandidateDiscoveryService.marketSet(null)).isEmpty();
     }
+
+    @Test
+    void 스냅샷에서_지수_수익률을_계산한다() {
+        ScreeningRow idx = row(KR_INDEX, "105", "100", "1", "100");
+        assertThat(CandidateDiscoveryService.index20dReturnOf(List.of(idx), KR_INDEX))
+                .isCloseTo(5.0, org.assertj.core.data.Offset.offset(1e-9));
+        assertThat(CandidateDiscoveryService.index20dReturnOf(List.of(idx), "000000")).isNull();
+        ScreeningRow noBase = new ScreeningRow(KR_INDEX, "KR", new BigDecimal("105"), null,
+                BigDecimal.ONE, new BigDecimal("100"), 60);
+        assertThat(CandidateDiscoveryService.index20dReturnOf(List.of(noBase), KR_INDEX)).isNull();
+    }
+
+    // ---- #840 동일테마 재진입 차단 (#887 이후에도 유지) ----
 
     @Test
     void same_theme_as_todays_stop_exit_is_detected() {
@@ -593,18 +345,5 @@ class CandidateDiscoveryServiceTest {
         StockNews n = new StockNews();
         n.setSentiment(sentiment);
         return n;
-    }
-
-    @Test
-    void still_hot_candidate_not_deactivated() {
-        when(newsMapper.findRecentEvents(any())).thenReturn(List.of());
-        AutoTradeCandidate existing = new AutoTradeCandidate();
-        existing.setSymbol("009150");
-        when(candidateMapper.findActive()).thenReturn(List.of(existing));
-        when(newsFadeDetector.hasNewsFaded("009150")).thenReturn(false);
-
-        service.refresh();
-
-        verify(candidateMapper, never()).deactivate(anyString());
     }
 }

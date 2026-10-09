@@ -39,7 +39,6 @@ public class AutoTradeScheduler {
     private final DailyOhlcvMapper dailyMapper;
     private final StockNewsMapper newsMapper;
     private final PriceCache priceCache;
-    private final NewsFadeDetector newsFadeDetector;
     private final RiskEventDetector riskEventDetector;
     private final IndexLagAlertService indexLagAlert;
 
@@ -59,7 +58,7 @@ public class AutoTradeScheduler {
     public AutoTradeScheduler(AutoTradeProperties props, AutoTradeStateMapper stateMapper,
                                AutoTradePositionMapper positionMapper, AutoTradeCandidateMapper candidateMapper,
                                DailyOhlcvMapper dailyMapper, StockNewsMapper newsMapper, PriceCache priceCache,
-                               NewsFadeDetector newsFadeDetector, RiskEventDetector riskEventDetector,
+                               RiskEventDetector riskEventDetector,
                                ValuationClient valuationClient,
                                CapitalReturnCatalystDetector capitalReturnCatalystDetector,
                                UniverseMapper universeMapper, CandidateDiscoveryService candidateDiscovery,
@@ -72,7 +71,6 @@ public class AutoTradeScheduler {
         this.dailyMapper = dailyMapper;
         this.newsMapper = newsMapper;
         this.priceCache = priceCache;
-        this.newsFadeDetector = newsFadeDetector;
         this.riskEventDetector = riskEventDetector;
         this.valuationClient = valuationClient;
         this.capitalReturnCatalystDetector = capitalReturnCatalystDetector;
@@ -174,8 +172,12 @@ public class AutoTradeScheduler {
         // 총손익 -93,140원 중 수수료·세금이 61,323원 — 만료 매도 → 신규 기사 → 재매수 루프.
         //
         // 기사 만료는 "더 사지 않을 이유"는 되지만 "팔 이유"는 되지 않는다(비대칭 의도).
-        // 안 사면 기회비용이고, 팔면 손실과 수수료가 확정된다. 그래서 hasNewsFaded 는
-        // 후보 풀 경로(매수 쪽)에만 남겨 뒀다. 하방은 HARD_STOP/TRAIL_STOP/CIRCUIT_BREAKER 가 지킨다.
+        // 안 사면 기회비용이고, 팔면 손실과 수수료가 확정된다. 하방은
+        // HARD_STOP/TRAIL_STOP/RISK_EVENT/CIRCUIT_BREAKER 가 지킨다.
+        //
+        // #887(2026-10-09): 매수 쪽에 남겨 뒀던 hasNewsFaded 게이트도 제거했다. 뉴스가 더 이상
+        // 진입 근거가 아니므로(측정: 뉴스일 진입 실현 -0.11% vs 뉴스 없는 날 +7.71%) "호재가
+        // 식었다"가 매수를 막을 이유가 못 된다. NewsFadeDetector 는 이제 어디서도 쓰지 않는다.
         //
         // #872: 만료 대신 "논거 무효"를 본다 — 진입 이후 리스크 기사(유증·횡령·상폐·블록딜·
         // 소송·적자)가 나오면 즉시 이탈한다. 원칙 §3-3/§3-5 는 보유 중에도 깨지면 안 되는
@@ -352,18 +354,10 @@ public class AutoTradeScheduler {
                 continue; // #840 — 오늘 손절된 포지션과 같은 테마(같은 스토리의 다음 기사)로
                           // 재진입하려는 경우, #839 쿨다운이 끝났어도 당일은 계속 차단.
             }
-            if (newsFadeDetector.hasNewsFaded(c.getSymbol())) {
-                if (!candidateDiscovery.retainDespiteNewsFade(c)) {
-                    verdicts.add(ScanVerdict.of(c, "NEWS_FADED",
-                            "호재(S4↑) 없고 저평가+상대강세 예외(#828)도 아님"));
-                    continue;
-                }
-                if (recentlyExitedViaNewsFade(c.getSymbol())) {
-                    verdicts.add(ScanVerdict.of(c, "FADE_COOLDOWN",
-                            "뉴스소멸 매도 후 " + props.newsFadedCooldownMinutes() + "분 쿨다운(#835)"));
-                    continue; // #828 유지경로 쿨다운(#835 QA) — 뉴스소멸 매도 직후 같은 경로로 바로 재매수 금지
-                }
-            }
+            // #887: 여기 있던 NEWS_FADED / FADE_COOLDOWN 매수 게이트를 제거했다. 뉴스가 더 이상
+            // 진입 근거가 아니므로 "호재가 식었다"는 매수를 막을 이유가 못 된다. 게다가 스크리너
+            // 후보는 애초에 뉴스가 없어 hasNewsFaded 가 항상 참이 되므로, 남겨 두면 전 후보가
+            // 차단돼 한 건도 매수하지 못한다. 설계: 887 README §4 "동작 불가 제약".
             List<DailyOhlcv> recent = dailyMapper.recentForSymbols(List.of(c.getSymbol()),
                     LocalDate.now().minusDays(props.volumeSpikeWindowDays() + 10));
             if (!PopularityChecker.isPopular(recent, props.volumeSpikeWindowDays(), props.volumeSpikeMultiplier(), props.priceMovePct())) {
@@ -372,6 +366,19 @@ public class AutoTradeScheduler {
                                 + props.priceMovePct() + "%)도 없음 · 일봉 " + recent.size() + "건"));
                 continue;
             }
+            // #887: 현재가·급등률을 밸류에이션 API 호출보다 먼저 구한다. 촉매면제에 급등률 상한을
+            // 걸어야 하므로 순서가 바뀌었고, 그 덕에 NO_PRICE 조기반환이 API 앞으로 올라와
+            // 콜드 캐시 상황에서 외부 호출이 줄어든다.
+            BigDecimal current = currentPrice(c.getSymbol());
+            if (current == null) {
+                verdicts.add(ScanVerdict.of(c, "NO_PRICE", "현재가 조회 실패(콜드 캐시) — 다음 틱 재시도"));
+                continue;
+            }
+            // #838 취지(테마성 과열 추격매수 차단)를 #859로 측정 교정: 일봉 "당일 변동률"은 장중
+            // 판단 시점엔 어제 값이거나 미완성 바라 "지금 이미 올라있다"를 못 봤고, 기준선이
+            // 전일종가라 어제 급등한 종목은 다음날 음수로 보여 그대로 통과했다(실측 손실 6건 중
+            // 4건이 이 경로). 최근 N거래일 최저 종가 대비 "실시간 체결가" 상승률로 판정한다.
+            Double extension = PriceExtension.pctAboveRecentLow(recent, current, props.extensionLookbackDays());
             Valuation valuation = valuationClient.getValuation(c.getSymbol(), c.getMarket());
             boolean cheap = ValuationChecker.isUndervalued(valuation, props.maxPer(), props.maxPbr());
             boolean rerateCatalyst = capitalReturnCatalystDetector.hasRecentCatalyst(c.getSymbol());
@@ -384,22 +391,19 @@ public class AutoTradeScheduler {
             // 있다(CapitalReturnCatalystDetector 주석 2026-10-02) — 미국은 PER만 본다.
             double catalystPbrBound = "US".equalsIgnoreCase(c.getMarket())
                     ? 0 : props.maxPbr() * props.catalystValuationMultiple();
-            boolean catalystAllowed = rerateCatalyst && ValuationChecker.withinCatalystBound(
-                    valuation, props.maxPer() * props.catalystValuationMultiple(), catalystPbrBound);
-            BigDecimal current = currentPrice(c.getSymbol());
-            if (current == null) {
-                verdicts.add(ScanVerdict.of(c, "NO_PRICE", "현재가 조회 실패(콜드 캐시) — 다음 틱 재시도"));
-                continue;
-            }
-            // #838 취지(테마성 과열 추격매수 차단)를 #859로 측정 교정: 일봉 "당일 변동률"은 장중
-            // 판단 시점엔 어제 값이거나 미완성 바라 "지금 이미 올라있다"를 못 봤고, 기준선이
-            // 전일종가라 어제 급등한 종목은 다음날 음수로 보여 그대로 통과했다(실측 손실 6건 중
-            // 4건이 이 경로). 최근 N거래일 최저 종가 대비 "실시간 체결가" 상승률로 판정한다.
-            Double extension = PriceExtension.pctAboveRecentLow(recent, current, props.extensionLookbackDays());
+            // #887: 면제에 급등률 상한도 건다. #855 가 "밸류에이션이 극단이면 면제 없음"을 막았지만
+            // 급등률 쪽은 여전히 통째로 면제됐다. 촉매일 조건부 측정(N=2,149)에서 급등 +10~15%
+            // 구간의 하드손절률이 71%, +25% 이상은 89.9% 다 — 어떤 촉매도 그 확률을 정당화하지
+            // 못한다. 급등률 판정 불가(extension == null)는 면제를 막지 않는다(기존 fail-open 유지).
+            boolean catalystExtensionOk = extension == null || extension < props.catalystMaxExtensionPct();
+            boolean catalystAllowed = rerateCatalyst && catalystExtensionOk
+                    && ValuationChecker.withinCatalystBound(
+                            valuation, props.maxPer() * props.catalystValuationMultiple(), catalystPbrBound);
             if (extension != null && extension >= props.maxExtensionPct() && !catalystAllowed) {
                 verdicts.add(ScanVerdict.of(c, "EXTENDED", String.format(
-                        "%d일 저점 대비 +%.2f%% ≥ 임계 %.1f%% · 촉매면제 없음(#859)",
-                        props.extensionLookbackDays(), extension, props.maxExtensionPct())));
+                        "%d일 저점 대비 +%.2f%% ≥ 임계 %.1f%% · 촉매면제 없음(#859/#887 상한 %.1f%%)",
+                        props.extensionLookbackDays(), extension, props.maxExtensionPct(),
+                        props.catalystMaxExtensionPct())));
                 continue;
             }
             if (!cheap && !catalystAllowed) {
@@ -433,18 +437,6 @@ public class AutoTradeScheduler {
      * 매수 결정근거 스냅샷(#832) — 게이트 통과에 쓴 값들을 그대로 재사용해 포맷만 한다. 판정은 하지 않는다.
      * 인기 트리거 수치는 {@link PopularityChecker}의 동일 공식 추출값, 트리거 뉴스는 로컬 DB 1회 조회.
      */
-    /**
-     * NEWS_FADED로 청산된 지 news-faded-cooldown-minutes 이내인지 — #828 유지경로(저평가+상대강세)
-     * 재매수 쿨다운(#835 QA, 2026-10-07). 판정이 임계값 근처에서 흔들려 매도 직후 바로 같은 경로로
-     * 재매수되는 걸 막는다(신규 호재는 이 쿨다운과 무관하게 정상 매수 가능 — hasNewsFaded가 false면
-     * 이 메서드 자체가 호출되지 않음).
-     */
-    private boolean recentlyExitedViaNewsFade(String symbol) {
-        LocalDateTime lastExit = positionMapper.lastNewsFadedExitAt(symbol);
-        return lastExit != null
-                && lastExit.isAfter(LocalDateTime.now().minusMinutes(props.newsFadedCooldownMinutes()));
-    }
-
     /**
      * 하드/트레일스탑으로 손절된 지 stop-exit-cooldown-minutes 이내인지(#839 실사고, 2026-10-07).
      * 066570 실사례: 트레일스탑 매도(212,000) 7초 뒤 더 비싼 가격(212,500)으로 재매수해 가격차만으로

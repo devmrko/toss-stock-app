@@ -97,4 +97,12 @@
           AND COALESCE(published_at, fetched_at) BETWEEN #{from} AND #{to}
     </select>
 
+    <!-- #887 매수 배제: 기간 내 타겟 있는 기사 전부. 판정에 필요한 3개 컬럼만 투영한다. -->
+    <select id="riskCandidatesSince" resultMap="newsMap">
+        SELECT id, title, targets, facts
+        FROM stock_news
+        WHERE COALESCE(published_at, fetched_at) &gt;= #{since}
+          AND targets IS NOT NULL
+    </select>
+
 </mapper>

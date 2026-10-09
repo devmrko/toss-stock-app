@@ -169,4 +169,24 @@
         ORDER BY 2 DESC
     </select>
 
+    <!-- #887 스크리너 1차 선별용 종목별 집계.
+         SELECT 컬럼 순서가 ScreeningRow 레코드 성분 순서와 일치해야 한다(MyBatis 생성자 매핑). -->
+    <select id="screeningSnapshot" resultType="com.cloudhandson.tossstock.autotrade.ScreeningRow">
+        WITH b AS (
+            SELECT symbol, close_p, volume,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY trade_date DESC) AS r
+            FROM daily_ohlcv
+            WHERE trade_date &gt;= #{since} AND close_p &gt; 0
+        )
+        SELECT symbol,
+               CASE WHEN REGEXP_LIKE(symbol, '^[0-9]{6}$') THEN 'KR' ELSE 'US' END AS market,
+               MAX(CASE WHEN r = 1 THEN close_p END)                      AS latest_close,
+               MAX(CASE WHEN r = 21 THEN close_p END)                     AS close_before20,
+               AVG(CASE WHEN r &lt;= 20 THEN close_p * volume END)           AS avg_turnover20,
+               MIN(CASE WHEN r &lt;= #{lookbackDays} THEN close_p END)       AS low_recent,
+               COUNT(*)                                                   AS bars
+        FROM b
+        GROUP BY symbol
+    </select>
+
 </mapper>

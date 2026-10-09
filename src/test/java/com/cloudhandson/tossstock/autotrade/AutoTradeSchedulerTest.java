@@ -45,7 +45,6 @@ class AutoTradeSchedulerTest {
     private DailyOhlcvMapper dailyMapper;
     private StockNewsMapper newsMapper;
     private PriceCache priceCache;
-    private NewsFadeDetector newsFadeDetector;
     private ValuationClient valuationClient;
     private CapitalReturnCatalystDetector catalystDetector;
     private UniverseMapper universeMapper;
@@ -61,7 +60,7 @@ class AutoTradeSchedulerTest {
         return new AutoTradeProperties(true, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI",
                 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000),
-                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 6.0, 5, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2));
+                BigDecimal.valueOf(350_000), 20, 1, 30, 60, 30, 6.0, 5, 15.0, 40, "KR", 7, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2));
     }
 
     @BeforeEach
@@ -72,7 +71,6 @@ class AutoTradeSchedulerTest {
         dailyMapper = mock(DailyOhlcvMapper.class);
         newsMapper = mock(StockNewsMapper.class);
         priceCache = mock(PriceCache.class);
-        newsFadeDetector = mock(NewsFadeDetector.class);
         riskEventDetector = mock(RiskEventDetector.class);
         indexLagAlert = mock(IndexLagAlertService.class);
         valuationClient = mock(ValuationClient.class);
@@ -81,7 +79,7 @@ class AutoTradeSchedulerTest {
         candidateDiscovery = mock(CandidateDiscoveryService.class);
         orderExecutor = mock(OrderExecutor.class);
         scheduler = new AutoTradeScheduler(props(), stateMapper, positionMapper, candidateMapper, dailyMapper,
-                newsMapper, priceCache, newsFadeDetector, riskEventDetector, valuationClient,
+                newsMapper, priceCache, riskEventDetector, valuationClient,
                 catalystDetector, universeMapper,
                 candidateDiscovery, orderExecutor, mock(DiscordClient.class), indexLagAlert);
         marketHours = mockStatic(MarketHours.class);
@@ -129,7 +127,6 @@ class AutoTradeSchedulerTest {
         // 인수조건 1 — 기존엔 NEWS_FADED 로 팔았다. 투자원칙 §4 의 매도 규칙은
         // 진입가 -10%, 고점 -10% 추적, 지수 열위 교체 셋뿐이고 "뉴스 만료"는 없다.
         holdingAt("225000");   // 하드 180,000 · 트레일 211,500 모두 위
-        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
 
         scheduler.tick();
 
@@ -137,13 +134,12 @@ class AutoTradeSchedulerTest {
     }
 
     @Test
-    void 매도_판정에서_뉴스소멸을_조회하지_않는다() {
-        // 인수조건 5 — 매도 경로가 뉴스에 의존하지 않음을 고정한다.
-        holdingAt("225000");
-
-        scheduler.tick();
-
-        verify(newsFadeDetector, org.mockito.Mockito.never()).hasNewsFaded(SYMBOL);
+    void 매수_매도_경로가_뉴스소멸_판정에_의존하지_않는다() {
+        // #871(매도)·#887(매수) 회귀 방지를 구조로 고정한다. 예전엔 "조회하지 않는다"를
+        // 목 검증으로 확인했지만, #887 에서 의존성 자체를 끊었으므로 그 목 검증은 항상
+        // 참이 되어 회귀를 못 잡는다. 주입 여부를 직접 본다 — 다시 주입되면 여기서 깨진다.
+        assertThat(AutoTradeScheduler.class.getDeclaredConstructors()[0].getParameterTypes())
+                .doesNotContain(NewsFadeDetector.class);
     }
 
     @Test
@@ -158,7 +154,6 @@ class AutoTradeSchedulerTest {
         when(positionMapper.countHolding()).thenReturn(1);
         when(priceCache.get(List.of(SYMBOL)))
                 .thenReturn(List.of(new TossPrice(SYMBOL, "179000", "KRW", null)));
-        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
 
         scheduler.tick();
 
@@ -168,7 +163,6 @@ class AutoTradeSchedulerTest {
     @Test
     void 뉴스가_식었어도_추적손절_조건이면_TRAIL_STOP으로_팔린다() {
         holdingAt("210500");   // 트레일손절선 211,500 이탈
-        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
 
         scheduler.tick();
 
@@ -343,7 +337,6 @@ class AutoTradeSchedulerTest {
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
         when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L)); // 시장 게이트 통과
         when(candidateMapper.findActive()).thenReturn(List.of(c));
-        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
         when(valuationClient.getValuation(SYMBOL, "KR"))
                 .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
@@ -401,7 +394,6 @@ class AutoTradeSchedulerTest {
         when(positionMapper.countHolding()).thenReturn(0);
         when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
-        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(extremeMoveBars());
         when(valuationClient.getValuation(SYMBOL, "KR"))
                 .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
@@ -426,7 +418,6 @@ class AutoTradeSchedulerTest {
         when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
         when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
-        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(extremeMoveBars());
         when(valuationClient.getValuation(SYMBOL, "KR"))
                 .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
@@ -458,7 +449,6 @@ class AutoTradeSchedulerTest {
         when(positionMapper.countHolding()).thenReturn(0);
         when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
-        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(bars);
         when(valuationClient.getValuation(SYMBOL, "KR"))
                 .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
@@ -489,8 +479,9 @@ class AutoTradeSchedulerTest {
         scheduler.tick();
 
         verify(orderExecutor, org.mockito.Mockito.never()).buy(any(), any(), any(), any(), any());
-        // 손절 쿨다운 자체로 막히므로, 그 뒤 단계(뉴스판정 등)는 아예 평가되지 않아야 한다.
-        verify(newsFadeDetector, org.mockito.Mockito.never()).hasNewsFaded(any());
+        // 손절 쿨다운 자체로 막히므로, 그 뒤 단계는 아예 평가되지 않아야 한다.
+        // (#887 로 뉴스판정이 사라졌으므로 그 뒤 첫 외부호출인 밸류에이션으로 고정한다.)
+        verify(valuationClient, org.mockito.Mockito.never()).getValuation(any(), any());
     }
 
     @Test
@@ -505,7 +496,34 @@ class AutoTradeSchedulerTest {
         when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(positionMapper.lastStopExitAt(SYMBOL)).thenReturn(LocalDateTime.now().minusMinutes(31));
-        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(false);
+        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
+        when(valuationClient.getValuation(SYMBOL, "KR"))
+                .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
+        when(catalystDetector.hasRecentCatalyst(SYMBOL)).thenReturn(false);
+        when(priceCache.get(List.of(SYMBOL)))
+                .thenReturn(List.of(new TossPrice(SYMBOL, "102000", "KRW", null)));
+
+        scheduler.tick();
+
+        verify(orderExecutor).buy(eq(SYMBOL), eq("KR"), any(), any(), any());
+    }
+
+    // ---- #887 뉴스는 진입 트리거가 아니다 ----
+
+    @Test
+    void 뉴스가_전혀_없는_스크리너_후보도_매수_경로를_통과한다() {
+        // 인수조건 AC5 — 스크리너 후보는 애초에 뉴스가 없다. 예전 NEWS_FADED 게이트를
+        // 남겨 뒀다면 hasNewsFaded 가 항상 참이 되어 전 후보가 차단됐을 것이다.
+        // 뉴스 관련 스텁을 하나도 주지 않는 것이 이 테스트의 핵심이다.
+        AutoTradeCandidate c = new AutoTradeCandidate();
+        c.setSymbol(SYMBOL);
+        c.setMarket("KR");
+        when(stateMapper.find()).thenReturn(state());
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO);
+        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
+        when(candidateMapper.findActive()).thenReturn(List.of(c));
         when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
         when(valuationClient.getValuation(SYMBOL, "KR"))
                 .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
@@ -519,21 +537,13 @@ class AutoTradeSchedulerTest {
     }
 
     @Test
-    void retention_path_buy_is_blocked_during_news_faded_cooldown() {
-        // #835 QA(2026-10-07) 재발 방지: 뉴스 식었지만(hasNewsFaded) 저평가+상대강세라
-        // retainDespiteNewsFade는 true인데도, 바로 직전(쿨다운 60분 이내)에 같은 종목이
-        // NEWS_FADED로 청산된 적 있으면 재매수하지 않는다.
-        AutoTradeCandidate c = new AutoTradeCandidate();
-        c.setSymbol(SYMBOL);
-        c.setMarket("KR");
-        when(stateMapper.find()).thenReturn(state());
-        when(positionMapper.findHolding()).thenReturn(List.of());
-        when(positionMapper.countHolding()).thenReturn(0);
-        when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
-        when(candidateMapper.findActive()).thenReturn(List.of(c));
-        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
-        when(candidateDiscovery.retainDespiteNewsFade(c)).thenReturn(true);
-        when(positionMapper.lastNewsFadedExitAt(SYMBOL)).thenReturn(LocalDateTime.now().minusMinutes(5));
+    void 급등률이_촉매면제_상한을_넘으면_촉매가_있어도_매수하지_않는다() {
+        // 인수조건 AC6 — #855 는 촉매면제에 "밸류에이션" 상한만 걸었고 급등률은 통째로
+        // 면제됐다. 촉매일 조건부 측정(N=2,149)에서 급등 +10~15% 구간의 하드손절률이 71%,
+        // +25% 이상은 89.9% 다. 저점 100,000 대비 현재가 120,000 = +20% ≥ 상한 15.0.
+        // 밸류에이션은 일부러 촉매 상한 안(PER 50 < 20x3, PBR 5 < 2x3)에 둬서,
+        // 예전 코드라면 면제를 받아 매수됐을 조건임을 고정한다.
+        stubCatalystBuyPath("120000");
 
         scheduler.tick();
 
@@ -541,30 +551,33 @@ class AutoTradeSchedulerTest {
     }
 
     @Test
-    void retention_path_buy_proceeds_once_cooldown_elapsed() {
+    void 급등률이_촉매면제_상한_미만이면_촉매로_면제된다() {
+        // AC6 의 대칭 — 상한을 추가해도 기존 면제 경로가 살아 있어야 한다.
+        // 저점 100,000 대비 현재가 110,000 = +10% < 상한 15.0 (단 기본 임계 6.0 은 초과).
+        stubCatalystBuyPath("110000");
+
+        scheduler.tick();
+
+        verify(orderExecutor).buy(eq(SYMBOL), eq("KR"), any(), any(), any());
+    }
+
+    /** 촉매면제 경로를 끝까지 태우는 공통 스텁. 5일 저점 100,000, 저평가 아님, 촉매 있음. */
+    private void stubCatalystBuyPath(String currentPrice) {
         AutoTradeCandidate c = new AutoTradeCandidate();
         c.setSymbol(SYMBOL);
         c.setMarket("KR");
         when(stateMapper.find()).thenReturn(state());
         when(positionMapper.findHolding()).thenReturn(List.of());
         when(positionMapper.countHolding()).thenReturn(0);
-        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO); // #845
+        when(positionMapper.realizedPnlTotal()).thenReturn(BigDecimal.ZERO);
         when(dailyMapper.breadth(anyString(), anyInt())).thenReturn(Map.of("UP", 60L, "TOTAL", 100L));
         when(candidateMapper.findActive()).thenReturn(List.of(c));
-        when(newsFadeDetector.hasNewsFaded(SYMBOL)).thenReturn(true);
-        when(candidateDiscovery.retainDespiteNewsFade(c)).thenReturn(true);
-        // 쿨다운(60분)보다 오래 전에 청산됨 → 재매수 허용
-        when(positionMapper.lastNewsFadedExitAt(SYMBOL)).thenReturn(LocalDateTime.now().minusHours(2));
-        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(priceMoveBars());
+        when(dailyMapper.recentForSymbols(any(), any(LocalDate.class))).thenReturn(extremeMoveBars());
         when(valuationClient.getValuation(SYMBOL, "KR"))
-                .thenReturn(new Valuation(BigDecimal.valueOf(11.6), BigDecimal.valueOf(0.47)));
-        when(catalystDetector.hasRecentCatalyst(SYMBOL)).thenReturn(false);
+                .thenReturn(new Valuation(BigDecimal.valueOf(50.0), BigDecimal.valueOf(5.0)));
+        when(catalystDetector.hasRecentCatalyst(SYMBOL)).thenReturn(true);
         when(priceCache.get(List.of(SYMBOL)))
-                .thenReturn(List.of(new TossPrice(SYMBOL, "102000", "KRW", null)));
-
-        scheduler.tick();
-
-        verify(orderExecutor).buy(eq(SYMBOL), eq("KR"), any(), any(), any());
+                .thenReturn(List.of(new TossPrice(SYMBOL, currentPrice, "KRW", null)));
     }
 
     /** 전일 100,000 → 당일 102,000(+2.0%, 가격 트리거). 거래량 윈도우(20일)는 일부러 부족하게 둔다. */

@@ -36,6 +36,10 @@ public record AutoTradeProperties(
         int stopExitCooldownMinutes,
         double maxExtensionPct,
         int extensionLookbackDays,
+        double catalystMaxExtensionPct,
+        int screenTopN,
+        String screenerMarkets,
+        int riskExclusionDays,
         double catalystValuationMultiple,
         double multibaggerGainPct,
         double multibaggerTrailStopPct,
@@ -46,6 +50,25 @@ public record AutoTradeProperties(
     public boolean alertsEnabled() {
         return webhookUrl != null && !webhookUrl.isBlank();
     }
+
+    /*
+     * #887 신규 4개 — 설계: docs/design/887-news-exclusion-filter/README.md §8
+     *
+     * catalystMaxExtensionPct: 재평가 촉매가 급등 필터를 통째로 면제하던 구멍의 상한.
+     *   촉매일 조건부 측정(N=2,149)에서 급등 +10~15% 구간의 하드손절률이 71%,
+     *   +25% 이상은 89.9% 였다 — 어떤 촉매도 그 확률을 정당화하지 못한다.
+     *
+     * screenTopN: 스크리너 등록 상한. API 비용을 결정론적으로 묶는 장치다. 실측으로
+     *   상위 40 중 POPULARITY 통과가 중위 8종목이고, 밸류에이션·재무 API 는 그 뒤에만
+     *   호출되므로 틱당 외부 요청이 통제된다. 0 이면 후보 0건(킬스위치).
+     *
+     * screenerMarkets: 활성 시장 CSV. US 는 일봉 거래량 결함(#885, 최신/20일평균 중위
+     *   0.125배)으로 거래대금 기반 유동성 필터가 전멸하고 환전도 미적용(#886)이라
+     *   기본값에서 제외한다. 빈 값이면 후보 0건(킬스위치).
+     *
+     * riskExclusionDays: 리스크 기사 배제 창(일). RiskEventDetector 의 24시간보다 길게
+     *   잡는다 — 매수 배제의 오탐은 기회비용뿐이고 매도 오탐은 실현손실이라 비대칭이다.
+     */
 
     /**
      * 시장상황 게이트 임계값 — "운영하면서 조정" 대상(하드코딩 금지).

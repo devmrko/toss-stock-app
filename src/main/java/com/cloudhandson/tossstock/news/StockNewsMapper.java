@@ -41,4 +41,12 @@ public interface StockNewsMapper {
      */
     List<StockNews> forSymbolBetween(@Param("symbol") String symbol, @Param("from") LocalDateTime from,
                                       @Param("to") LocalDateTime to);
+
+    /**
+     * {@code since} 이후 타겟이 있는 기사 전부(#887 매수 배제용) — title/targets/facts 만 투영한다.
+     *
+     * <p>{@code forSymbolBetween} 은 종목별 {@code targets LIKE} 스캔이지만 이건 기간 범위
+     * 조회 1회다. 배제 목록은 전 종목을 한 번에 만들어야 하므로 종목별 반복 조회를 피한다.
+     */
+    List<StockNews> riskCandidatesSince(@Param("since") LocalDateTime since);
 }

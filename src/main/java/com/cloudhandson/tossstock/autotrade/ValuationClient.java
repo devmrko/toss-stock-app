@@ -45,6 +45,8 @@ public class ValuationClient {
     private static final Duration TIMEOUT = Duration.ofSeconds(8);
     private static final Duration SUCCESS_CACHE_TTL = Duration.ofMinutes(15);
     private static final Duration FAILURE_CACHE_TTL = Duration.ofMinutes(1);
+    /** 연간 결산은 하루 안에 바뀌지 않는다(#887). 실패는 FAILURE_CACHE_TTL 을 그대로 쓴다. */
+    private static final Duration FINANCIALS_CACHE_TTL = Duration.ofDays(1);
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(TIMEOUT)
@@ -55,10 +57,16 @@ public class ValuationClient {
     private final Map<String, Cached<Valuation>> valuationCache = new ConcurrentHashMap<>();
     private final Map<String, Cached<Double>> indexReturnCache = new ConcurrentHashMap<>();
     private final Map<String, Cached<IndexRiskSignal>> riskSignalCache = new ConcurrentHashMap<>();
+    private final Map<String, Cached<AnnualFinancials>> financialsCache = new ConcurrentHashMap<>();
 
     private record Cached<T>(T value, Instant fetchedAt) {
         boolean expired() {
-            Duration ttl = value == null ? FAILURE_CACHE_TTL : SUCCESS_CACHE_TTL;
+            return expired(SUCCESS_CACHE_TTL);
+        }
+
+        /** 성공 TTL 을 호출부가 정하는 변형(#887) — 실패는 항상 짧게 유지한다. */
+        boolean expired(Duration successTtl) {
+            Duration ttl = value == null ? FAILURE_CACHE_TTL : successTtl;
             return Duration.between(fetchedAt, Instant.now()).compareTo(ttl) >= 0;
         }
     }
@@ -124,8 +132,24 @@ public class ValuationClient {
     /**
      * 연도별 실적(매출/영업이익/순이익/부채비율/배당) — 컨센서스(추정) 연도 제외, 실제 결산만.
      * KR=네이버, US=야후(2026-09-30 추가). 실패 시 null(fail-closed).
+     *
+     * <p><b>#887 캐시 추가.</b> 이 메서드에는 캐시가 없어서 {@code tick()}(1분 주기)이 후보마다
+     * 네이버/야후를 직접 호출했다. 후보가 뉴스 기반(1~5건)일 때는 견뎠지만 스크리너로 바뀌면
+     * 상한이 40건이 되어 차단당한다(HTTP 429 전례 있음). 연간 결산은 하루 안에 바뀌지 않으므로
+     * TTL 을 1일로 둔다 — 실패는 기존 {@code FAILURE_CACHE_TTL}(1분)을 그대로 쓴다.
      */
     public AnnualFinancials getAnnualFinancials(String symbol, String market) {
+        String key = market + ":" + symbol;
+        Cached<AnnualFinancials> cached = financialsCache.get(key);
+        if (cached != null && !cached.expired(FINANCIALS_CACHE_TTL)) {
+            return cached.value();
+        }
+        AnnualFinancials fresh = fetchAnnualFinancials(symbol, market);
+        financialsCache.put(key, new Cached<>(fresh, Instant.now()));
+        return fresh;
+    }
+
+    private AnnualFinancials fetchAnnualFinancials(String symbol, String market) {
         try {
             return "US".equalsIgnoreCase(market) ? fetchYahooFinancials(symbol) : fetchNaverFinancials(symbol);
         } catch (Exception e) {

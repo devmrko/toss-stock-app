@@ -65,4 +65,17 @@ public interface DailyOhlcvMapper {
      */
     List<DailyRangeStats> rangeStatsBatch(@Param("fromDate") LocalDate fromDate,
                                           @Param("windowBars") int windowBars);
+
+    /**
+     * 전 종목의 로컬 집계 1회(#887 스크리너 1차 선별). 외부 API 를 쓰지 않는다.
+     *
+     * <p>여러 프로젝트가 공유하는 20GB PDB 이므로 단일 {@code GROUP BY} 로 끝낸다.
+     * 발굴 주기(15분)에만 돌고 틱(1분)에서는 호출하지 않는다.
+     *
+     * @param since        조회 하한. 21바를 휴장일 포함해 덮을 만큼 넉넉히 줄 것(기본 90일)
+     * @param lookbackDays 급등률 분모가 되는 최근 거래일 수. 매수 게이트의
+     *                     {@code extension-lookback-days} 와 같은 값을 넘겨야 한다
+     */
+    List<com.cloudhandson.tossstock.autotrade.ScreeningRow> screeningSnapshot(
+            @Param("since") LocalDate since, @Param("lookbackDays") int lookbackDays);
 }
