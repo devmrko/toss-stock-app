@@ -33,6 +33,7 @@ class OrderExecutorTest {
     private TossApiClient toss;
     private DiscordClient discord;
     private CommissionRateCache commissionRates;
+    private FxRateCache fxRates;
     private OrderExecutor executor;
 
     @BeforeEach
@@ -45,10 +46,12 @@ class OrderExecutorTest {
         toss = mock(TossApiClient.class);
         discord = mock(DiscordClient.class);
         commissionRates = mock(CommissionRateCache.class);
+        fxRates = mock(FxRateCache.class);
+        // #886 기존 테스트는 전부 KR 이라 환율을 읽지 않는다. US 테스트만 개별로 스텁한다.
         // #863 조회 요율이 없을 때의 기본값과 같은 값을 돌려줘 기존 기대값을 유지한다.
         when(commissionRates.rateFor(anyString()))
                 .thenAnswer(i -> TradingFeeCalculator.defaultCommissionRate(i.getArgument(0)));
-        executor = new OrderExecutor(props, stateMapper, positionMapper, logMapper, toss, discord, commissionRates);
+        executor = new OrderExecutor(props, stateMapper, positionMapper, logMapper, toss, discord, commissionRates, fxRates);
     }
 
     private AutoTradeState stateWith(boolean dbDryRun) {
@@ -74,7 +77,7 @@ class OrderExecutorTest {
     void db_dry_run_true_also_blocks_real_order_even_if_config_false() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 15.0, 40, "KR", 7, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2));
-        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates);
+        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates, fxRates);
         when(stateMapper.find()).thenReturn(stateWith(true)); // DB가 true면 이중 안전장치로 드라이런
 
         liveExecutor.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
@@ -86,7 +89,7 @@ class OrderExecutorTest {
     void both_false_places_real_order_exactly_once() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 15.0, 40, "KR", 7, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2));
-        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates);
+        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates, fxRates);
         when(stateMapper.find()).thenReturn(stateWith(false));
         TossOrder.Execution exec = new TossOrder.Execution("20", "50000", "1000000", "0", "0", null, null);
         when(toss.placeOrder(any())).thenReturn(new TossOrder("ORD1", "005930", "BUY", "MARKET", "FILLED",
@@ -105,7 +108,7 @@ class OrderExecutorTest {
         // 쓸 수 없음이 확인됐음(13건) — TradingFeeCalculator로 체결금액×요율을 직접 계산해 저장.
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 15.0, 40, "KR", 7, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2));
-        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates);
+        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates, fxRates);
         when(stateMapper.find()).thenReturn(stateWith(false));
         TossOrder.Execution exec = new TossOrder.Execution("20", "50000", "1000000", "0", "0", null, null);
         when(toss.placeOrder(any())).thenReturn(new TossOrder("ORD1", "005930", "BUY", "MARKET", "FILLED",
@@ -137,7 +140,7 @@ class OrderExecutorTest {
         // 틱마다 반복 매수(012330, 5회)로 이어짐. 감사로그 실패와 무관하게 포지션은 기록돼야 함.
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 15.0, 40, "KR", 7, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2));
-        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates);
+        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates, fxRates);
         when(stateMapper.find()).thenReturn(stateWith(false));
         TossOrder.Execution exec = new TossOrder.Execution("20", "50000", "1000000", "0", "0", null, null);
         when(toss.placeOrder(any())).thenReturn(new TossOrder("ORD1", "005930", "BUY", "MARKET", "FILLED",
@@ -154,7 +157,7 @@ class OrderExecutorTest {
     void sell_follows_position_dry_run_flag_not_global_state() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 15.0, 40, "KR", 7, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2));
-        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates);
+        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates, fxRates);
         when(stateMapper.find()).thenReturn(stateWith(false));
 
         AutoTradePosition dryRunPosition = new AutoTradePosition();
@@ -184,7 +187,7 @@ class OrderExecutorTest {
     void sell_log_message_carries_rationale_even_when_order_fails() {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 15.0, 40, "KR", 7, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2));
-        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates);
+        OrderExecutor liveExecutor = new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates, fxRates);
         when(stateMapper.find()).thenReturn(stateWith(false));
         when(toss.placeOrder(any())).thenThrow(new RuntimeException("HTTP 429 too many requests"));
 
@@ -224,7 +227,7 @@ class OrderExecutorTest {
         AutoTradeProperties liveProps = new AutoTradeProperties(false, BigDecimal.valueOf(5_000_000), 5,
                 BigDecimal.valueOf(1_000_000), 15.0, 10.0, 10.0, "", "0 */5 9-15 * * MON-FRI", 20, 1.5, 2.0, 20.0, 2.0, 200.0, BigDecimal.valueOf(500_000_000), BigDecimal.valueOf(350_000), 20, 4, 30, 60, 30, 6.0, 5, 15.0, 40, "KR", 7, 3.0, 300.0, 15.0, 10.0, "0 30 8 * * MON", new AutoTradeProperties.Gate(35, 100, 2.5, 20, 0.2));
         when(stateMapper.find()).thenReturn(stateWith(false));
-        return new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates);
+        return new OrderExecutor(liveProps, stateMapper, positionMapper, logMapper, toss, discord, commissionRates, fxRates);
     }
 
     private static TossOrder order(String status, String avgFilledPrice) {
@@ -279,5 +282,91 @@ class OrderExecutorTest {
         assertThat(ok).isTrue();
         verify(toss, times(1)).getOrder("ORD1"); // 예외 즉시 루프 중단, 재시도 소진까지 안 감
         verify(logMapper).insert(argThat(e -> e.getRequestedPrice().compareTo(BigDecimal.valueOf(50000)) == 0));
+    }
+
+    // ---- #886 US 환율·예수금 ----
+
+    @Test
+    void us매수에서_환율_조회가_실패하면_주문하지_않는다() {
+        // AC2 — fail-closed. 환율을 모르는 채 주문하면 수량이 400배로 틀린다.
+        OrderExecutor live = liveExecutor();
+        when(fxRates.usdKrw()).thenReturn(null);
+
+        boolean ok = live.buy("SMCI", "US", BigDecimal.valueOf(600_000), new BigDecimal("41.29"), RATIONALE);
+
+        assertThat(ok).isFalse();
+        verify(toss, never()).placeOrder(any());
+        verify(logMapper).insert(argThat(e -> e.getMessage().contains("환율 조회 실패")));
+    }
+
+    @Test
+    void us매수에서_예수금_조회가_실패하면_주문하지_않는다() {
+        // AC3 — Toss API 는 429 전례가 있다.
+        OrderExecutor live = liveExecutor();
+        when(fxRates.usdKrw()).thenReturn(new BigDecimal("1340.78"));
+        when(toss.getBuyingPower("USD")).thenThrow(new RuntimeException("HTTP 429"));
+
+        boolean ok = live.buy("SMCI", "US", BigDecimal.valueOf(600_000), new BigDecimal("41.29"), RATIONALE);
+
+        assertThat(ok).isFalse();
+        verify(toss, never()).placeOrder(any());
+        verify(logMapper).insert(argThat(e -> e.getMessage().contains("USD 예수금 조회 실패")));
+    }
+
+    @Test
+    void us매수_수량이_환율로_환산된_예산을_따른다() {
+        // AC1 — 결함 코드는 600,000 / 41.29 = 14,531주(약 $600,000)를 주문했다.
+        // 교정 후: 600,000 / 1340.78 = $447.50 → / $41.29 = 10주.
+        OrderExecutor live = liveExecutor();
+        when(fxRates.usdKrw()).thenReturn(new BigDecimal("1340.78"));
+        when(toss.getBuyingPower("USD"))
+                .thenReturn(new com.cloudhandson.tossstock.toss.dto.TossBuyingPower("USD", "1500"));
+        when(toss.placeOrder(any())).thenReturn(order("FILLED", "41.29"));
+
+        live.buy("SMCI", "US", BigDecimal.valueOf(600_000), new BigDecimal("41.29"), RATIONALE);
+
+        verify(toss).placeOrder(argThat(r -> "10".equals(r.quantity())));
+    }
+
+    @Test
+    void us매수에서_예수금이_수량_상한이_된다() {
+        // AC4 — 예수금 $100 < 환산예산 $447.50 → 2주
+        OrderExecutor live = liveExecutor();
+        when(fxRates.usdKrw()).thenReturn(new BigDecimal("1340.78"));
+        when(toss.getBuyingPower("USD"))
+                .thenReturn(new com.cloudhandson.tossstock.toss.dto.TossBuyingPower("USD", "100"));
+        when(toss.placeOrder(any())).thenReturn(order("FILLED", "41.29"));
+
+        live.buy("SMCI", "US", BigDecimal.valueOf(600_000), new BigDecimal("41.29"), RATIONALE);
+
+        verify(toss).placeOrder(argThat(r -> "2".equals(r.quantity())));
+        verify(logMapper).insert(argThat(e -> e.getMessage().contains("상한=예수금")));
+    }
+
+    @Test
+    void us매수_주가가_환산예산보다_비싸면_주문하지_않는다() {
+        // TSM $456.35 > $447.50 — 소수점 주문 미지원이라 1주도 못 산다(설계 §12-2).
+        OrderExecutor live = liveExecutor();
+        when(fxRates.usdKrw()).thenReturn(new BigDecimal("1340.78"));
+        when(toss.getBuyingPower("USD"))
+                .thenReturn(new com.cloudhandson.tossstock.toss.dto.TossBuyingPower("USD", "1500"));
+
+        boolean ok = live.buy("TSM", "US", BigDecimal.valueOf(600_000), new BigDecimal("456.35"), RATIONALE);
+
+        assertThat(ok).isFalse();
+        verify(toss, never()).placeOrder(any());
+    }
+
+    @Test
+    void kr매수는_환율을_조회하지_않는다() {
+        // AC6 회귀 — KR 경로는 환율·예수금을 읽지 않는다.
+        OrderExecutor live = liveExecutor();
+        when(toss.placeOrder(any())).thenReturn(order("FILLED", "50000"));
+
+        live.buy("005930", "KR", BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(50_000), RATIONALE);
+
+        verify(fxRates, never()).usdKrw();
+        verify(toss, never()).getBuyingPower(any());
+        verify(toss).placeOrder(argThat(r -> "20".equals(r.quantity())));
     }
 }

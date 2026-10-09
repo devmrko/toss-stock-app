@@ -235,10 +235,22 @@ public class DailyCollector {
         writer.replaceAll(top, LocalDateTime.now());
     }
 
-    /** 순수: 캔들 → 일봉 행. 파싱 실패 필드는 null. */
+    /**
+     * 순수: 캔들 → 일봉 행. 파싱 실패 필드는 null.
+     *
+     * <p><b>#885</b>: 세션이 끝나지 않은 거래일은 {@code null} 을 반환해 저장을 건너뛴다.
+     * 이 메서드가 3개 {@code upsert} 경로(정기 수집·후방 백필·종목 백필)의 <b>유일한
+     * 관문</b>이라 가드를 여기 한 곳에만 둔다 — 수집 스케줄을 US 용으로 쪼개면 경로가
+     * 갈라져 같은 버그가 재발할 여지가 생긴다.
+     */
     DailyOhlcv toDaily(String symbol, TossCandle c) {
         LocalDate d = tradeDate(c);
         if (d == null) {
+            return null;
+        }
+        String market = BarCompleteness.marketOf(symbol);
+        if (!BarCompleteness.sessionClosed(market, d, LocalDateTime.now())) {
+            log.debug("미완성 바 저장 건너뜀(#885): {} {} {}", symbol, market, d);
             return null;
         }
         return new DailyOhlcv(symbol, d, dec(c.openPrice()), dec(c.highPrice()),

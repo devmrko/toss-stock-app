@@ -32,11 +32,12 @@ public class OrderExecutor {
     private final TossApiClient toss;
     private final DiscordClient discord;
     private final CommissionRateCache commissionRates;
+    private final FxRateCache fxRates;
 
     public OrderExecutor(AutoTradeProperties props, AutoTradeStateMapper stateMapper,
                           AutoTradePositionMapper positionMapper, AutoTradeOrderLogMapper logMapper,
                           TossApiClient toss, DiscordClient discord,
-                          CommissionRateCache commissionRates) {
+                          CommissionRateCache commissionRates, FxRateCache fxRates) {
         this.props = props;
         this.stateMapper = stateMapper;
         this.positionMapper = positionMapper;
@@ -44,6 +45,23 @@ public class OrderExecutor {
         this.toss = toss;
         this.discord = discord;
         this.commissionRates = commissionRates;
+        this.fxRates = fxRates;
+    }
+
+    /**
+     * USD 예수금(#886). 조회 실패는 null — 호출부가 US 매수를 보류한다(fail-closed).
+     * Toss API 는 429 전례가 있어 예외를 삼키고 null 로 떨어뜨린다 — KR 경로와 매도
+     * 경로(손절 감시)를 막아선 안 된다.
+     */
+    private BigDecimal usdCash() {
+        try {
+            com.cloudhandson.tossstock.toss.dto.TossBuyingPower bp = toss.getBuyingPower("USD");
+            return bp == null || bp.cashBuyingPower() == null ? null : new BigDecimal(bp.cashBuyingPower());
+        } catch (RuntimeException e) {
+            // NumberFormatException(파싱 실패)도 RuntimeException 이라 여기서 함께 잡힌다.
+            log.warn("USD 예수금 조회/파싱 실패 — US 매수 보류: {}", e.toString());
+            return null;
+        }
     }
 
     /** 이중 안전장치: 코드 설정과 DB 상태 중 하나라도 드라이런이면 드라이런(§9). */
@@ -65,16 +83,24 @@ public class OrderExecutor {
         }
 
         boolean dryRun = effectiveDryRun();
-        BigDecimal qty = budget.divide(currentPrice, 0, RoundingMode.DOWN);
-        if (qty.signum() <= 0) {
-            saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, null, currentPrice, null, false, "수량 0(예산 부족)",
-                    null, null, null, null);
+        // #886: 원화 슬롯예산을 달러 주가로 그대로 나누던 한 줄을 교체했다
+        // (600,000 ÷ $456.35 = 1,315주 ≈ 8억원 — 실제 USD 예수금은 $1,500).
+        // US 는 환율로 환산하고 USD 예수금을 상한으로 쓴다. 드라이런도 같은 수량을 쓴다 —
+        // 드라이런이 실거래와 다른 수량을 쓰면 검증 의미가 없다.
+        boolean isUs = "US".equalsIgnoreCase(market);
+        OrderSizer.Sizing sizing = OrderSizer.buyQuantity(market, budget, currentPrice,
+                isUs ? fxRates.usdKrw() : null, isUs ? usdCash() : null);
+        if (sizing.qty().signum() <= 0) {
+            saveLogSafely(symbol, "BUY", "BUY_SIGNAL", dryRun, null, currentPrice, null, false,
+                    truncate("수량 0 — " + sizing.note()), null, null, null, null);
             return false;
         }
+        BigDecimal qty = sizing.qty();
 
         String tossOrderId = null;
         boolean success = true;
-        String message = dryRun ? "드라이런 — 실주문 안 함" : "실주문 체결";
+        String message = (dryRun ? "드라이런 — 실주문 안 함" : "실주문 체결")
+                + (isUs ? " · " + sizing.note() : "");   // #886 적용 환율·환산액을 남긴다
         BigDecimal filledPrice = currentPrice; // 드라이런은 견적가 그대로, 실주문은 아래서 체결가로 교체
         if (!dryRun) {
             try {
