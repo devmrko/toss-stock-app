@@ -138,25 +138,33 @@ class UniverseScreenerTest {
     // ---- 정렬 / 상한 ----
 
     @Test
-    void 거래대금_내림차순_상위N으로_잘린다() {
+    void 급등률_오름차순_상위N으로_잘린다() {
+        // 1차 키는 급등률(저점 근접 우선). 거래대금 내림차순은 2차 키다.
+        // 거래대금 상위 N 절단은 실현 -0.94% 였고 급등률 오름차순은 4개 분기 모두
+        // 그보다 나쁘지 않았다 — UniverseScreener#screen 6단계 주석 참조.
         UniverseScreener.ScreenParams p = new UniverseScreener.ScreenParams(
                 Set.of("KR"), KR_FLOOR, US_FLOOR, 3.0, 2);
         UniverseScreener.ScreenResult r = UniverseScreener.screen(List.of(
-                row("AAA111", "KR", "101", "100", "1000000000", "100", 60),
-                row("BBB222", "KR", "101", "100", "3000000000", "100", 60),
-                row("CCC333", "KR", "101", "100", "2000000000", "100", 60)),
+                row("AAA111", "KR", "102.5", "100", "9000000000", "100", 60),   // 급등 +2.5% · 거래대금 최대
+                row("BBB222", "KR", "100.5", "100", "1000000000", "100", 60),   // 급등 +0.5%
+                row("CCC333", "KR", "101.5", "100", "5000000000", "100", 60)),  // 급등 +1.5%
                 Set.of(), krIndexFlat(), p);
+        // 거래대금이 가장 큰 AAA111 이 급등률 때문에 탈락한다 — 이게 교정의 핵심이다.
         assertThat(r.selected()).extracting(ScreenCandidate::symbol)
                 .containsExactly("BBB222", "CCC333");
     }
 
     @Test
-    void 거래대금_동률이면_종목코드_오름차순() {
+    void 급등률_동률이면_거래대금_내림차순_그다음_종목코드() {
+        // 5일 저점에 닿은 종목은 급등률이 정확히 0 으로 동률이라 동률 처리가 선택을
+        // 지배한다(측정에서 2차 키만 바꿔 결과가 +10.73% → +2.90% 로 바뀌었다).
+        // 그래서 2차 키를 거래대금으로 고정한다 — 유동성이 큰 쪽을 먼저 본다.
         UniverseScreener.ScreenResult r = screen(
-                row("000660", "KR", "101", "100", "1000000000", "100", 60),
-                row("005930", "KR", "101", "100", "1000000000", "100", 60));
+                row("000660", "KR", "100", "99", "1000000000", "100", 60),
+                row("005930", "KR", "100", "99", "3000000000", "100", 60),
+                row("000020", "KR", "100", "99", "3000000000", "100", 60));
         assertThat(r.selected()).extracting(ScreenCandidate::symbol)
-                .containsExactly("000660", "005930");
+                .containsExactly("000020", "005930", "000660");
     }
 
     @Test

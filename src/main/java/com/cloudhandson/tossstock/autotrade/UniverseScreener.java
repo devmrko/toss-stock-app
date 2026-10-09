@@ -124,12 +124,30 @@ public final class UniverseScreener {
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         int afterRiskExclusion = stage.size();
 
-        // 6) 정렬 + 절단. 거래대금 내림차순, 동률이면 종목코드 오름차순(결정론적).
+        // 6) 정렬 + 절단 — 급등률 오름차순(저점에 가까운 쪽 먼저), 동률이면 거래대금
+        // 내림차순, 그 다음 종목코드 오름차순(결정론적).
+        //
+        // 처음엔 거래대금 내림차순으로 구현했다("측정된 알파가 아니라 방어적 선택"이라고
+        // 설계서에 적었다). 측정해보니 방어가 아니라 역효과였다 — 필터 통과 전체 코호트는
+        // 실현 +1.74%(N=34,759)인데 거래대금 상위 40 만 잘라내면 -0.94%(N=2,806)로 뒤집힌다.
+        // 상위 N 절단이 신호를 없애는 쪽으로 작동했다.
+        //
+        // 급등률 오름차순은 4개 분기 모두에서 거래대금 내림차순보다 나쁘지 않았다
+        // (2025Q4 +2.27 = +2.27 / 2026Q1 +3.59 = +3.59 / 2026Q2 -5.58 > -6.09 /
+        //  2026Q3 +5.74 > +0.19 — 앞 두 분기는 통과 종목이 40 미만이어서 두 랭킹이 같다).
+        // 방향도 오늘 측정에서 유일하게 모든 표본·창·시장·유니버스에서 재현된 효과
+        // (급등률이 낮을수록 성과가 좋다)와 일치한다.
+        //
+        // 과장 금지: 단일 랭킹 비교에서 급등률 오름차순이 +10.73% 로 나왔지만 그건
+        // 2차 정렬키가 만든 허상이었다 — 5일 저점에 닿은 종목은 급등률이 정확히 0 으로
+        // 동률이라 동률 처리가 선택을 지배한다. 2차 키를 종목코드에서 거래대금으로
+        // 바꾸자 가중평균 +2.90% 로 내려갔다. 주장하는 것은 위 4분기 비열위뿐이다.
         List<ScreenCandidate> selected = stage.stream()
                 .map(r -> new ScreenCandidate(r.symbol(), r.market(),
                         r.avgTurnover20() == null ? BigDecimal.ZERO : r.avgTurnover20(),
                         extensionPctOf(r), excessReturnPctOf(r, indexReturns.get(r.market()))))
-                .sorted(Comparator.comparing(ScreenCandidate::turnover).reversed()
+                .sorted(Comparator.comparingDouble(ScreenCandidate::extensionPct)
+                        .thenComparing(Comparator.comparing(ScreenCandidate::turnover).reversed())
                         .thenComparing(ScreenCandidate::symbol))
                 .limit(Math.max(0, params.topN()))
                 .toList();
