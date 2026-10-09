@@ -40,6 +40,17 @@ public class MarketController {
         return toss.getAccounts();
     }
 
+    /**
+     * 예수금(매수가능금액) — #886 확인용. @{code currency}=KRW|USD.
+     * TossApiClient.getBuyingPower 는 구현돼 있었으나 어디서도 호출되지 않아
+     * 달러 예수금을 코드가 모르는 상태였다(매수 수량 계산에 환율·예수금 미반영).
+     */
+    @GetMapping("/buying-power")
+    public com.cloudhandson.tossstock.toss.dto.TossBuyingPower buyingPower(
+            @RequestParam(defaultValue = "KRW") String currency) {
+        return toss.getBuyingPower(currency);
+    }
+
     /** 수수료 요율표(#863) — 운영 중 요율 확인용. */
     @GetMapping("/commissions")
     public List<com.cloudhandson.tossstock.toss.dto.TossCommission> commissions() {
