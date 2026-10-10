@@ -105,6 +105,88 @@ public class AutoTradeController {
                 : ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
     }
 
+    /** 수동 매수 확인 문구. 실수 호출을 막는 유일한 목적이다. */
+    private static final String MANUAL_BUY_CONFIRM = "BUY-REAL";
+
+    /**
+     * 수동 매수 1건(#900) — #886 환율·예수금 경로를 실주문으로 검증하기 위한 운영 엔드포인트.
+     *
+     * <p><b>수량을 받지 않고 예산을 받는다.</b> 수량을 받으면 {@link OrderSizer} 를 우회해
+     * 검증 목적이 사라진다. 예산을 1주분으로 주면 OrderSizer 가 1주를 계산한다
+     * (예: CCL $26.13 → budgetKrw=36000 → 환산 $26.85 → 1주).
+     *
+     * <p><b>토스 API 를 직접 호출하지 않는 이유</b>는 {@link #sellPosition} 과 같다 —
+     * 직접 호출하면 원장에 없는 포지션이 생겨 봇이 손절을 걸지 않는다. OrderExecutor 를
+     * 거치면 주문로그·포지션 등록·손절 감시가 한 흐름으로 붙는다.
+     *
+     * <p>드라이런을 우회하지 않는다 — {@code OrderExecutor.effectiveDryRun()} 이 설정과 DB
+     * 상태를 그대로 보므로 둘 중 하나라도 드라이런이면 실주문이 나가지 않는다(§9).
+     *
+     * 설계: docs/design/900-manual-buy-endpoint/fn-manualBuy.md
+     */
+    @PostMapping("/manual-buy")
+    public ResponseEntity<Map<String, Object>> manualBuy(@RequestParam String symbol,
+                                                         @RequestParam BigDecimal budgetKrw,
+                                                         @RequestParam String confirm) {
+        if (!MANUAL_BUY_CONFIRM.equals(confirm)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "confirm 불일치 — 실주문이므로 confirm=" + MANUAL_BUY_CONFIRM + " 필요"));
+        }
+        String s = symbol == null ? "" : symbol.trim();
+        if (s.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "symbol 이 비어 있음"));
+        }
+        if (budgetKrw == null || budgetKrw.signum() <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "budgetKrw 는 0 보다 커야 함"));
+        }
+        if (budgetKrw.compareTo(props.perSymbolBudget()) > 0) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "budgetKrw 가 슬롯예산 상한 초과", "cap", props.perSymbolBudget()));
+        }
+        // 되돌릴 수 없는 것을 가장 뒤로 — 입력검증 → DB 상태 → 외부 시세 → 주문.
+        AutoTradeState state = stateMapper.find();
+        if (state == null || state.isCircuitBreakerTripped()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", state == null ? "auto_trade_state 없음" : "서킷브레이커 발동 상태"));
+        }
+        String market = com.cloudhandson.tossstock.market.BarCompleteness.marketOf(s);
+        if (!MarketHours.isOpen(market, java.time.LocalDateTime.now())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "symbol", s, "market", market,
+                    "error", "장 마감 중 — 시장가 주문은 개장 중에만 낸다(체결가 통제 불가)"));
+        }
+        if (positionMapper.findHolding().stream().anyMatch(p -> p.getSymbol().equals(s))) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "symbol", s, "error", "이미 보유 중 — 추가매수(평단 관리) 개념이 봇에 없다"));
+        }
+        int openSlots = props.maxSymbols() - positionMapper.countHolding();
+        if (openSlots <= 0) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "symbol", s, "error", "열린 슬롯 없음", "maxSymbols", props.maxSymbols()));
+        }
+        List<TossPrice> prices = priceCache.get(List.of(s));
+        if (prices.isEmpty() || prices.get(0).lastPrice() == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("symbol", s, "error", "현재가 조회 실패 — 잠시 후 재시도"));
+        }
+        BigDecimal current = new BigDecimal(prices.get(0).lastPrice());
+        String rationale = "수동 매수(#900) — #886 환율·예수금 경로 실주문 검증. 사용자 지시";
+
+        boolean ok = orderExecutor.buy(s, market, budgetKrw, current, rationale);
+        Map<String, Object> body = new HashMap<>();
+        body.put("symbol", s);
+        body.put("market", market);
+        body.put("bought", ok);
+        body.put("budgetKrw", budgetKrw);
+        body.put("price", current);
+        body.put("rationale", rationale);
+        if (!ok) {
+            body.put("hint", "수량 0 또는 주문 실패 — GET /api/autotrade/orderlog 의 message 참조");
+        }
+        return ok ? ResponseEntity.ok(body)
+                : ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
+    }
+
     /** 스케줄러 강제 1회 실행(드라이런 여부는 auto_trade_state/설정을 그대로 따름 — 이 호출 자체가 안전장치를 우회하지 않음). */
     @PostMapping("/tick")
     public ResponseEntity<Map<String, Object>> tick() {

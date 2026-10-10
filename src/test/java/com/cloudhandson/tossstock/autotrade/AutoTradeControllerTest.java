@@ -259,4 +259,162 @@ class AutoTradeControllerTest {
         assertThat(res.getStatusCode().value()).isEqualTo(502);
         assertThat(res.getBody()).containsEntry("sold", false);
     }
+
+    // ---- #900 수동 매수 엔드포인트 ----
+
+    private void givenReadyToBuy() {
+        AutoTradeState st = new AutoTradeState();
+        st.setCircuitBreakerTripped(false);
+        when(stateMapper.find()).thenReturn(st);
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(priceCache.get(List.of("CCL")))
+                .thenReturn(List.of(new TossPrice("CCL", "26.13", "USD", null)));
+    }
+
+    @Test
+    void 수동매수_confirm이_틀리면_400이고_주문하지_않는다() {
+        // AC1 — 실주문 엔드포인트의 유일한 오타 방어선.
+        var r = controller.manualBuy("CCL", BigDecimal.valueOf(36_000), "oops");
+
+        assertThat(r.getStatusCode().value()).isEqualTo(400);
+        verify(orderExecutor, never()).buy(anyString(), anyString(), any(), any(), anyString());
+    }
+
+    @Test
+    void 수동매수_예산이_슬롯상한을_넘으면_400() {
+        // AC2 — 상한 600,000
+        var r = controller.manualBuy("CCL", BigDecimal.valueOf(600_001), "BUY-REAL");
+
+        assertThat(r.getStatusCode().value()).isEqualTo(400);
+        verify(orderExecutor, never()).buy(anyString(), anyString(), any(), any(), anyString());
+    }
+
+    @Test
+    void 수동매수_예산이_0이하면_400() {
+        // AC3
+        assertThat(controller.manualBuy("CCL", BigDecimal.ZERO, "BUY-REAL")
+                .getStatusCode().value()).isEqualTo(400);
+        assertThat(controller.manualBuy("CCL", BigDecimal.valueOf(-1), "BUY-REAL")
+                .getStatusCode().value()).isEqualTo(400);
+        verify(orderExecutor, never()).buy(anyString(), anyString(), any(), any(), anyString());
+    }
+
+    @Test
+    void 수동매수_symbol이_비면_400() {
+        assertThat(controller.manualBuy("   ", BigDecimal.valueOf(36_000), "BUY-REAL")
+                .getStatusCode().value()).isEqualTo(400);
+    }
+
+    @Test
+    void 수동매수_서킷브레이커면_409() {
+        // AC7
+        AutoTradeState st = new AutoTradeState();
+        st.setCircuitBreakerTripped(true);
+        when(stateMapper.find()).thenReturn(st);
+
+        var r = controller.manualBuy("CCL", BigDecimal.valueOf(36_000), "BUY-REAL");
+
+        assertThat(r.getStatusCode().value()).isEqualTo(409);
+        verify(orderExecutor, never()).buy(anyString(), anyString(), any(), any(), anyString());
+    }
+
+    @Test
+    void 수동매수_장_마감이면_409() {
+        // AC4 — 시장가 주문을 닫힌 시장에 넣으면 체결가를 통제할 수 없다.
+        givenReadyToBuy();
+        marketHours.when(() -> MarketHours.isOpen(anyString(), any(LocalDateTime.class))).thenReturn(false);
+
+        var r = controller.manualBuy("CCL", BigDecimal.valueOf(36_000), "BUY-REAL");
+
+        assertThat(r.getStatusCode().value()).isEqualTo(409);
+        verify(orderExecutor, never()).buy(anyString(), anyString(), any(), any(), anyString());
+    }
+
+    @Test
+    void 수동매수_이미_보유면_409() {
+        // AC5
+        AutoTradeState st = new AutoTradeState();
+        when(stateMapper.find()).thenReturn(st);
+        AutoTradePosition held = new AutoTradePosition();
+        held.setSymbol("CCL");
+        held.setMarket("US");
+        when(positionMapper.findHolding()).thenReturn(List.of(held));
+
+        var r = controller.manualBuy("CCL", BigDecimal.valueOf(36_000), "BUY-REAL");
+
+        assertThat(r.getStatusCode().value()).isEqualTo(409);
+        verify(orderExecutor, never()).buy(anyString(), anyString(), any(), any(), anyString());
+    }
+
+    @Test
+    void 수동매수_슬롯이_없으면_409() {
+        // AC6
+        AutoTradeState st = new AutoTradeState();
+        when(stateMapper.find()).thenReturn(st);
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(5);   // maxSymbols=5
+
+        var r = controller.manualBuy("CCL", BigDecimal.valueOf(36_000), "BUY-REAL");
+
+        assertThat(r.getStatusCode().value()).isEqualTo(409);
+        verify(orderExecutor, never()).buy(anyString(), anyString(), any(), any(), anyString());
+    }
+
+    @Test
+    void 수동매수_시세조회_실패면_503() {
+        // AC8
+        AutoTradeState st = new AutoTradeState();
+        when(stateMapper.find()).thenReturn(st);
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(priceCache.get(List.of("CCL"))).thenReturn(List.of());
+
+        var r = controller.manualBuy("CCL", BigDecimal.valueOf(36_000), "BUY-REAL");
+
+        assertThat(r.getStatusCode().value()).isEqualTo(503);
+        verify(orderExecutor, never()).buy(anyString(), anyString(), any(), any(), anyString());
+    }
+
+    @Test
+    void 수동매수_정상이면_예산을_그대로_넘기고_수량은_지정하지_않는다() {
+        // AC9 — 엔드포인트는 수량을 계산하지 않는다. OrderSizer(#886)가 계산해야 검증이 된다.
+        givenReadyToBuy();
+        when(orderExecutor.buy(eq("CCL"), eq("US"), any(), any(), anyString())).thenReturn(true);
+
+        var r = controller.manualBuy("CCL", BigDecimal.valueOf(36_000), "BUY-REAL");
+
+        assertThat(r.getStatusCode().value()).isEqualTo(200);
+        verify(orderExecutor).buy(eq("CCL"), eq("US"),
+                argThat(b -> b.compareTo(BigDecimal.valueOf(36_000)) == 0),
+                argThat(p -> p.compareTo(new BigDecimal("26.13")) == 0), anyString());
+    }
+
+    @Test
+    void 수동매수_주문이_실패하면_502() {
+        // AC10 — 환율 조회 실패·수량 0·주문 거부가 전부 여기로 떨어진다.
+        givenReadyToBuy();
+        when(orderExecutor.buy(anyString(), anyString(), any(), any(), anyString())).thenReturn(false);
+
+        var r = controller.manualBuy("CCL", BigDecimal.valueOf(36_000), "BUY-REAL");
+
+        assertThat(r.getStatusCode().value()).isEqualTo(502);
+        assertThat(r.getBody()).containsEntry("bought", false);
+        assertThat(r.getBody().get("hint").toString()).contains("orderlog");
+    }
+
+    @Test
+    void 수동매수_kr종목은_market_KR로_넘어간다() {
+        AutoTradeState st = new AutoTradeState();
+        when(stateMapper.find()).thenReturn(st);
+        when(positionMapper.findHolding()).thenReturn(List.of());
+        when(positionMapper.countHolding()).thenReturn(0);
+        when(priceCache.get(List.of("005930")))
+                .thenReturn(List.of(new TossPrice("005930", "263500", "KRW", null)));
+        when(orderExecutor.buy(anyString(), anyString(), any(), any(), anyString())).thenReturn(true);
+
+        controller.manualBuy("005930", BigDecimal.valueOf(600_000), "BUY-REAL");
+
+        verify(orderExecutor).buy(eq("005930"), eq("KR"), any(), any(), anyString());
+    }
 }
